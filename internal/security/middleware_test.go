@@ -171,6 +171,87 @@ func TestGate_PopulatesPhasePrompt(t *testing.T) {
 	}
 }
 
+func TestGate_RateLimitedShellExec(t *testing.T) {
+	t.Parallel()
+	mw, _, auditPath := newTestMiddleware(t)
+
+	rl := NewRateLimiter(1, 0, nil)
+	mw.SetRateLimiter(rl)
+
+	// First shell_exec should succeed.
+	err := mw.Gate("agent-1", types.PermStandard, ActionShellExec,
+		"go build ./...", "1A", 1)
+	if err != nil {
+		t.Fatalf("first exec: %v", err)
+	}
+
+	// Second shell_exec should be rate-limited.
+	err = mw.Gate("agent-1", types.PermStandard, ActionShellExec,
+		"go test ./...", "1A", 2)
+	if !errors.Is(err, types.ErrRateLimited) {
+		t.Errorf("expected ErrRateLimited, got %v", err)
+	}
+
+	entries := readAuditEntries(t, auditPath)
+	// Should have 2 entries: allowed + denied.
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 audit entries, got %d", len(entries))
+	}
+	if entries[1].Allowed {
+		t.Error("second entry should be denied")
+	}
+	if entries[1].Reason != "rate_limited" {
+		t.Errorf("reason = %q, want %q", entries[1].Reason, "rate_limited")
+	}
+}
+
+func TestGate_RateLimitedFileWrite(t *testing.T) {
+	t.Parallel()
+	mw, root, auditPath := newTestMiddleware(t)
+
+	rl := NewRateLimiter(0, 1, nil)
+	mw.SetRateLimiter(rl)
+
+	target1 := filepath.Join(root, "src", "main.go")
+	err := mw.Gate("agent-1", types.PermElevated, ActionFileWrite,
+		target1, "1A", 1)
+	if err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+
+	// Create a second file so sandbox passes.
+	writeFile(t, filepath.Join(root, "src", "other.go"), "package main")
+	target2 := filepath.Join(root, "src", "other.go")
+
+	err = mw.Gate("agent-1", types.PermElevated, ActionFileWrite,
+		target2, "1A", 2)
+	if !errors.Is(err, types.ErrFileLimit) {
+		t.Errorf("expected ErrFileLimit, got %v", err)
+	}
+
+	entries := readAuditEntries(t, auditPath)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 audit entries, got %d", len(entries))
+	}
+	if entries[1].Reason != "file_limit" {
+		t.Errorf("reason = %q, want %q", entries[1].Reason, "file_limit")
+	}
+}
+
+func TestGate_NoRateLimiterPassthrough(t *testing.T) {
+	t.Parallel()
+	mw, _, _ := newTestMiddleware(t)
+
+	// No rate limiter set — should work as before.
+	for i := 0; i < 5; i++ {
+		err := mw.Gate("agent-1", types.PermStandard, ActionShellExec,
+			"go build ./...", "1A", i+1)
+		if err != nil {
+			t.Fatalf("command %d: %v", i, err)
+		}
+	}
+}
+
 func readAuditEntries(t *testing.T, path string) []AuditEntry {
 	t.Helper()
 	f, err := os.Open(path)

@@ -117,6 +117,9 @@ var startCmd = &cobra.Command{
 		defer auditLogger.Close()
 		secMiddleware := security.NewSecurityMiddleware(enforcer, auditLogger, log)
 
+		rateLimiter := security.NewRateLimiter(cfg.Security.MaxCmdsPerMin, cfg.Security.MaxFilesPerSession, log)
+		secMiddleware.SetRateLimiter(rateLimiter)
+
 		messenger.SetMessageGate(secMiddleware)
 
 		// Build orchestrator.

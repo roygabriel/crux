@@ -16,4 +16,6 @@ var (
 	ErrPermissionDenied = errors.New("permission denied")
 	// ErrRateLimited indicates the agent has exceeded its rate limit.
 	ErrRateLimited = errors.New("rate limited")
+	// ErrFileLimit indicates the agent has exceeded its per-session file modification limit.
+	ErrFileLimit = errors.New("file limit exceeded")
 )

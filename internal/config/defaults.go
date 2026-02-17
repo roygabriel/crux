@@ -11,8 +11,10 @@ func DefaultConfig() *Config {
 		},
 		Agents: map[string]AgentConfig{},
 		Memory: MemoryConfig{
-			SQLitePath: ".crux/memory.db",
-			VectorDir:  ".crux/vectors",
+			SQLitePath:        ".crux/memory.db",
+			VectorDir:         ".crux/vectors",
+			EmbeddingProvider: "chromem-default",
+			EmbeddingModel:    "nomic-embed-text",
 		},
 		Phases: PhaseConfig{
 			SpecDir: "docs/phases",

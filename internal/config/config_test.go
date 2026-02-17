@@ -24,6 +24,8 @@ agents:
 memory:
   sqlite_path: ".crux/memory.db"
   vector_dir: ".crux/vectors"
+  embedding_provider: "ollama"
+  embedding_model: "all-minilm"
 
 phases:
   spec_dir: "docs/phases"
@@ -52,6 +54,12 @@ security:
 	if cfg.Security.MaxCmdsPerMin != 30 {
 		t.Errorf("Security.MaxCmdsPerMin = %d, want %d", cfg.Security.MaxCmdsPerMin, 30)
 	}
+	if cfg.Memory.EmbeddingProvider != "ollama" {
+		t.Errorf("Memory.EmbeddingProvider = %q, want %q", cfg.Memory.EmbeddingProvider, "ollama")
+	}
+	if cfg.Memory.EmbeddingModel != "all-minilm" {
+		t.Errorf("Memory.EmbeddingModel = %q, want %q", cfg.Memory.EmbeddingModel, "all-minilm")
+	}
 }
 
 func TestLoadEnvOverrides(t *testing.T) {
@@ -71,6 +79,8 @@ memory:
 	t.Setenv("CRUX_PROJECT_NAME", "overridden")
 	t.Setenv("CRUX_MEMORY_SQLITE_PATH", "/custom/path.db")
 	t.Setenv("CRUX_SECURITY_MAX_CMDS_PER_MIN", "120")
+	t.Setenv("CRUX_MEMORY_EMBEDDING_PROVIDER", "ollama")
+	t.Setenv("CRUX_MEMORY_EMBEDDING_MODEL", "custom-model")
 
 	cfg, err := Load(path)
 	if err != nil {
@@ -85,6 +95,12 @@ memory:
 	}
 	if cfg.Security.MaxCmdsPerMin != 120 {
 		t.Errorf("Security.MaxCmdsPerMin = %d, want %d", cfg.Security.MaxCmdsPerMin, 120)
+	}
+	if cfg.Memory.EmbeddingProvider != "ollama" {
+		t.Errorf("Memory.EmbeddingProvider = %q, want %q", cfg.Memory.EmbeddingProvider, "ollama")
+	}
+	if cfg.Memory.EmbeddingModel != "custom-model" {
+		t.Errorf("Memory.EmbeddingModel = %q, want %q", cfg.Memory.EmbeddingModel, "custom-model")
 	}
 }
 

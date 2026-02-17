@@ -76,6 +76,10 @@ type MemoryConfig struct {
 	SQLitePath string `yaml:"sqlite_path" json:"sqlite_path"`
 	// VectorDir is the directory for vector index persistence.
 	VectorDir string `yaml:"vector_dir" json:"vector_dir"`
+	// EmbeddingProvider selects the embedding backend ("chromem-default" or "ollama").
+	EmbeddingProvider string `yaml:"embedding_provider" json:"embedding_provider"`
+	// EmbeddingModel is the model name when using the ollama provider.
+	EmbeddingModel string `yaml:"embedding_model" json:"embedding_model"`
 }
 
 // PhaseConfig configures the phase engine.
@@ -189,8 +193,10 @@ func applyEnvOverrides(cfg *Config) {
 		"CRUX_PROJECT_NAME":      &cfg.Project.Name,
 		"CRUX_PROJECT_ROOT":      &cfg.Project.Root,
 		"CRUX_PROJECT_STATE_DIR": &cfg.Project.StateDir,
-		"CRUX_MEMORY_SQLITE_PATH": &cfg.Memory.SQLitePath,
-		"CRUX_MEMORY_VECTOR_DIR":  &cfg.Memory.VectorDir,
+		"CRUX_MEMORY_SQLITE_PATH":        &cfg.Memory.SQLitePath,
+		"CRUX_MEMORY_VECTOR_DIR":         &cfg.Memory.VectorDir,
+		"CRUX_MEMORY_EMBEDDING_PROVIDER": &cfg.Memory.EmbeddingProvider,
+		"CRUX_MEMORY_EMBEDDING_MODEL":    &cfg.Memory.EmbeddingModel,
 		"CRUX_PHASES_SPEC_DIR":    &cfg.Phases.SpecDir,
 		"CRUX_SECURITY_AUDIT_LOG": &cfg.Security.AuditLog,
 	}

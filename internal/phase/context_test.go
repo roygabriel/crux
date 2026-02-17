@@ -193,6 +193,74 @@ func TestBuildForPrompt_BankError(t *testing.T) {
 	}
 }
 
+// --- Mock ContextSummarizer ---
+
+type mockContextSummarizer struct {
+	result string
+	err    error
+}
+
+func (m *mockContextSummarizer) SummarizeForPrompt(_ context.Context, _ string, _ int) (string, error) {
+	return m.result, m.err
+}
+
+func TestBuildForPrompt_WithSummarizer(t *testing.T) {
+	wn := &mockContextWorkNotes{
+		notes: map[string]*worknotes.WorkNotes{
+			"1A": {PhaseID: "1A"},
+		},
+	}
+	js := &mockDecisionSearcher{decisions: nil}
+	bank := &mockBankSummarizer{summary: ""}
+	summarizer := &mockContextSummarizer{result: "Summarized context for prompt"}
+
+	cb := phase.NewContextBuilder(js, wn, bank, slog.Default())
+	cb.SetSummarizer(summarizer)
+
+	contract := phase.PromptContract{
+		PhaseID: "1A", PromptNumber: 1, TotalPrompts: 1,
+		Title: "Test", Task: "Do.",
+	}
+	spec := phase.PhaseSpec{ID: "1A", Name: "Test"}
+
+	data, err := cb.BuildForPrompt(context.Background(), contract, spec, "engineer", "standard")
+	if err != nil {
+		t.Fatalf("BuildForPrompt: %v", err)
+	}
+	if data.WorkNotes != "Summarized context for prompt" {
+		t.Errorf("WorkNotes = %q, want summarizer output", data.WorkNotes)
+	}
+}
+
+func TestBuildForPrompt_SummarizerFallback(t *testing.T) {
+	wn := &mockContextWorkNotes{
+		notes: map[string]*worknotes.WorkNotes{
+			"1A": {PhaseID: "1A"},
+		},
+	}
+	js := &mockDecisionSearcher{decisions: nil}
+	bank := &mockBankSummarizer{summary: ""}
+	summarizer := &mockContextSummarizer{err: errors.New("summarizer failed")}
+
+	cb := phase.NewContextBuilder(js, wn, bank, slog.Default())
+	cb.SetSummarizer(summarizer)
+
+	contract := phase.PromptContract{
+		PhaseID: "1A", PromptNumber: 1, TotalPrompts: 1,
+		Title: "Test", Task: "Do.",
+	}
+	spec := phase.PhaseSpec{ID: "1A", Name: "Test"}
+
+	data, err := cb.BuildForPrompt(context.Background(), contract, spec, "engineer", "standard")
+	if err != nil {
+		t.Fatalf("BuildForPrompt should not error on summarizer failure: %v", err)
+	}
+	// Should fall back to raw notes.
+	if data.WorkNotes != "## Work Notes for 1A" {
+		t.Errorf("WorkNotes = %q, want raw notes fallback", data.WorkNotes)
+	}
+}
+
 func TestFormatDecisions(t *testing.T) {
 	tests := []struct {
 		name      string

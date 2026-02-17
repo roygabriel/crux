@@ -82,10 +82,18 @@ var startCmd = &cobra.Command{
 		notesMgr := worknotes.NewManager(notesDir, log)
 		completion := phase.NewCompletionHandler(engine, gateRunner, j, notesMgr, log)
 
-		// Context builder.
+		// Context builder with optional summarizer and budget enforcer.
 		bankDir := filepath.Join(cfg.Project.StateDir, "memory-bank")
 		memBank := bank.NewBank(bankDir, log)
 		contextBld := phase.NewContextBuilder(j, notesMgr, memBank, log)
+
+		// Progressive summarizer.
+		summarizer := orchestrator.NewSummarizer(notesMgr, j, cfg.Context.Summary, log)
+		contextBld.SetSummarizer(summarizer)
+
+		// Context budget enforcer.
+		budget := orchestrator.BudgetFromConfig(cfg.Context, log)
+		contextBld.SetEnforcer(budget)
 
 		// Tracker.
 		tracker := phase.NewTracker(engine, log)

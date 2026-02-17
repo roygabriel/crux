@@ -19,12 +19,24 @@ type BankSummarizer interface {
 	Summary() (string, error)
 }
 
+// ContextSummarizer produces progressively summarized context for prompts.
+type ContextSummarizer interface {
+	SummarizeForPrompt(ctx context.Context, phaseID string, promptNum int) (string, error)
+}
+
+// ContextEnforcer trims context sections to fit within a token budget.
+type ContextEnforcer interface {
+	Enforce(workNotes, decisions, bankSummary string) (string, string, string)
+}
+
 // ContextBuilder assembles prompt context from work notes, journal, and memory bank.
 type ContextBuilder struct {
-	journal   DecisionSearcher
-	workNotes WorkNotesManager
-	bank      BankSummarizer
-	logger    *slog.Logger
+	journal    DecisionSearcher
+	workNotes  WorkNotesManager
+	bank       BankSummarizer
+	summarizer ContextSummarizer
+	enforcer   ContextEnforcer
+	logger     *slog.Logger
 }
 
 // NewContextBuilder creates a ContextBuilder with the given dependencies.
@@ -40,6 +52,18 @@ func NewContextBuilder(journal DecisionSearcher, workNotes WorkNotesManager, ban
 	}
 }
 
+// SetSummarizer configures an optional progressive summarizer. When set,
+// BuildForPrompt uses summarized work notes instead of raw rendering.
+func (cb *ContextBuilder) SetSummarizer(s ContextSummarizer) {
+	cb.summarizer = s
+}
+
+// SetEnforcer configures an optional context budget enforcer. When set,
+// BuildForPrompt trims context sections to fit within the token budget.
+func (cb *ContextBuilder) SetEnforcer(e ContextEnforcer) {
+	cb.enforcer = e
+}
+
 // BuildForPrompt assembles a PromptData by gathering context from work notes,
 // journal, and memory bank. Missing or errored sources degrade gracefully —
 // those sections are left empty rather than returning an error.
@@ -48,11 +72,21 @@ func (cb *ContextBuilder) BuildForPrompt(
 ) (PromptData, error) {
 	// Read work notes — first prompt may not have notes yet.
 	var workNotesText string
-	notes, err := cb.workNotes.Read(string(spec.ID))
-	if err != nil {
-		cb.logger.Debug("no work notes found", "phase", spec.ID, "error", err)
-	} else {
-		workNotesText = cb.workNotes.Render(notes)
+	if cb.summarizer != nil {
+		summarized, sErr := cb.summarizer.SummarizeForPrompt(ctx, string(spec.ID), contract.PromptNumber)
+		if sErr != nil {
+			cb.logger.Warn("summarizer failed, falling back to raw notes", "phase", spec.ID, "error", sErr)
+		} else {
+			workNotesText = summarized
+		}
+	}
+	if workNotesText == "" {
+		notes, err := cb.workNotes.Read(string(spec.ID))
+		if err != nil {
+			cb.logger.Debug("no work notes found", "phase", spec.ID, "error", err)
+		} else {
+			workNotesText = cb.workNotes.Render(notes)
+		}
 	}
 
 	// Search journal for relevant decisions.
@@ -73,6 +107,11 @@ func (cb *ContextBuilder) BuildForPrompt(
 		cb.logger.Warn("bank summary failed", "phase", spec.ID, "error", err)
 	} else {
 		bankSummary = summary
+	}
+
+	// Enforce context budget if configured.
+	if cb.enforcer != nil {
+		workNotesText, decisionsText, bankSummary = cb.enforcer.Enforce(workNotesText, decisionsText, bankSummary)
 	}
 
 	return BuildPromptData(contract, spec, workNotesText, decisionsText, bankSummary, agentRole, agentPerm), nil

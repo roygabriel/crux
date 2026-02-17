@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/roygabriel/crux/internal/agent"
 	"github.com/roygabriel/crux/internal/phase"
@@ -75,11 +76,14 @@ func (a *Assigner) AssignNext(ctx context.Context) error {
 		return fmt.Errorf("assign next: update status: %w", err)
 	}
 
+	now := time.Now().UTC()
 	a.worldState.UpdateAgent(selected.Agent.ID, AgentState{
 		Status:        types.StatusBusy,
 		PromptDisplay: fmt.Sprintf("Phase %s P%d", spec.ID, prompt.PromptNumber),
 		Task:          prompt.Task,
 		LastActive:    selected.LaunchedAt,
+		PhaseID:       spec.ID,
+		AssignedAt:    now,
 	})
 
 	a.logger.Info("assigned prompt to agent",
@@ -105,6 +109,8 @@ func (a *Assigner) AssignToAgent(ctx context.Context, agentID types.AgentID, pha
 		Status:        types.StatusBusy,
 		PromptDisplay: fmt.Sprintf("Phase %s P%d", phaseID, promptNum),
 		LastActive:    inst.LaunchedAt,
+		PhaseID:       phaseID,
+		AssignedAt:    time.Now().UTC(),
 	})
 
 	a.logger.Info("explicitly assigned prompt to agent",

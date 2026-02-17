@@ -23,6 +23,8 @@ type Config struct {
 	Phases PhaseConfig `yaml:"phases" json:"phases"`
 	// Security configures sandboxing, auditing, and rate limiting.
 	Security SecurityConfig `yaml:"security" json:"security"`
+	// Context configures the orchestrator context budget.
+	Context ContextConfig `yaml:"context" json:"context,omitempty"`
 	// GenericPlugins maps custom plugin names to their regex-based configuration.
 	GenericPlugins map[string]GenericPluginConfig `yaml:"generic_plugins" json:"generic_plugins,omitempty"`
 }
@@ -98,6 +100,20 @@ type SecurityConfig struct {
 	MaxFilesPerSession int `yaml:"max_files_per_session" json:"max_files_per_session"`
 	// AllowedPaths restricts file operations to these path prefixes.
 	AllowedPaths []string `yaml:"allowed_paths" json:"allowed_paths,omitempty"`
+}
+
+// ContextConfig configures the orchestrator context budget for prompt injection.
+type ContextConfig struct {
+	// TotalBudget is the total token budget for all context sections.
+	TotalBudget int `yaml:"total_budget" json:"total_budget,omitempty"`
+	// WorldState is the token budget for world state injection.
+	WorldState int `yaml:"world_state" json:"world_state,omitempty"`
+	// DecisionRAG is the token budget for decision RAG context.
+	DecisionRAG int `yaml:"decision_rag" json:"decision_rag,omitempty"`
+	// Summary is the token budget for work notes summary.
+	Summary int `yaml:"summary" json:"summary,omitempty"`
+	// Reserve is the token budget reserved for prompt structure.
+	Reserve int `yaml:"reserve" json:"reserve,omitempty"`
 }
 
 // Load reads a YAML configuration file, applies environment variable

@@ -22,6 +22,10 @@ type AgentState struct {
 	LastDecision string `json:"last_decision,omitempty"`
 	// LastActive is the last time the agent reported activity.
 	LastActive time.Time `json:"last_active"`
+	// PhaseID is the phase currently assigned to this agent.
+	PhaseID types.PhaseID `json:"phase_id,omitempty"`
+	// AssignedAt is when the agent was assigned its current work.
+	AssignedAt time.Time `json:"assigned_at,omitempty"`
 }
 
 // WorldState is a thread-safe snapshot of the orchestration state.
@@ -65,6 +69,15 @@ func (w *WorldState) UpdatePhase(phase types.PhaseID, name string) {
 	w.Phase = phase
 	w.PhaseName = name
 	w.UpdatedAt = time.Now().UTC()
+}
+
+// GetAgent returns the state for a specific agent. It is safe for concurrent use.
+func (w *WorldState) GetAgent(id types.AgentID) (AgentState, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	state, ok := w.Agents[id]
+	return state, ok
 }
 
 // compactAgent is the minimal agent representation for prompt injection.

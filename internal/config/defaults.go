@@ -24,5 +24,12 @@ func DefaultConfig() *Config {
 			MaxCmdsPerMin:      60,
 			MaxFilesPerSession: 100,
 		},
+		Context: ContextConfig{
+			TotalBudget: 8000,
+			WorldState:  300,
+			DecisionRAG: 1500,
+			Summary:     3000,
+			Reserve:     3200,
+		},
 	}
 }

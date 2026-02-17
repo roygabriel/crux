@@ -39,6 +39,9 @@ type Orchestrator struct {
 	logger       *slog.Logger
 	pollInterval time.Duration
 
+	// conflicts detects and resolves file conflicts between parallel agents.
+	conflicts *ConflictDetector
+
 	// paneContent stores the latest captured content per agent, guarded by mu.
 	mu          sync.Mutex
 	paneContent map[types.AgentID]string
@@ -69,11 +72,28 @@ func New(
 		logger = slog.Default()
 	}
 	ws := NewWorldState("")
+	var recorder DecisionRecorder
+	if j != nil {
+		recorder = j
+	} else {
+		recorder = noopRecorder{}
+	}
+	conflicts := NewConflictDetector(
+		engine,
+		NewExecGitDiffer(cfg.Project.Root),
+		registry,
+		ws,
+		workNotes,
+		recorder,
+		30*time.Second,
+		logger,
+	)
 	return &Orchestrator{
 		cfg:          cfg,
 		worldState:   ws,
 		assigner:     NewAssigner(registry, engine, ws, logger),
 		rag:          NewDecisionRAG(j, logger),
+		conflicts:    conflicts,
 		registry:     registry,
 		engine:       engine,
 		completion:   completion,
@@ -124,6 +144,16 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	// Start pane watchers for each agent.
 	o.startWatchers(ctx)
 
+	// Start file conflict monitoring.
+	conflictCh := o.conflicts.MonitorRuntime(ctx)
+	go func() {
+		for event := range conflictCh {
+			if err := o.conflicts.HandleConflict(ctx, event); err != nil {
+				o.logger.Error("conflict handling failed", "error", err)
+			}
+		}
+	}()
+
 	// Main loop.
 	ticker := time.NewTicker(o.pollInterval)
 	defer ticker.Stop()
@@ -166,9 +196,45 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 		}
 	}
 
+	// Check for file conflicts before assigning.
+	assignmentAllowed := true
+	if nextPrompt := o.engine.CurrentPrompt(); nextPrompt != nil {
+		if spec := o.engine.CurrentPhase(); spec != nil {
+			// Check against all active phases from busy agents.
+			for _, inst := range agents {
+				if inst.Agent.Status == types.StatusBusy {
+					agentState, ok := o.worldState.GetAgent(inst.Agent.ID)
+					if ok && agentState.PhaseID != "" && agentState.PhaseID != spec.ID {
+						if err := o.conflicts.CheckBeforeAssign(agentState.PhaseID, spec.ID); err != nil {
+							o.logger.Warn("skipping assignment due to conflict", "error", err)
+							assignmentAllowed = false
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Assign idle agents to pending prompts.
-	if err := o.assigner.AssignNext(ctx); err != nil && err != ErrNoAvailableAgent {
-		o.logger.Warn("assignment error", "error", err)
+	if assignmentAllowed {
+		if err := o.assigner.AssignNext(ctx); err != nil && err != ErrNoAvailableAgent {
+			o.logger.Warn("assignment error", "error", err)
+		} else if err == nil {
+			// Track the assignment for conflict detection.
+			if spec := o.engine.CurrentPhase(); spec != nil {
+				// Find the agent that was just assigned (became busy).
+				for _, inst := range o.registry.List() {
+					if inst.Agent.Status == types.StatusBusy {
+						agentState, ok := o.worldState.GetAgent(inst.Agent.ID)
+						if ok && agentState.PhaseID == spec.ID {
+							files := append(spec.FilesNew, spec.FilesModified...)
+							o.conflicts.TrackAssignment(inst.Agent.ID, spec.ID, files)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Periodically save session.
@@ -217,6 +283,9 @@ func (o *Orchestrator) handleTransition(
 		o.logger.Warn("failed to update agent status in registry", "agent_id", id, "error", err)
 	}
 
+	// Preserve PhaseID and AssignedAt from the current agent state.
+	existing, _ := o.worldState.GetAgent(id)
+
 	switch curr {
 	case types.StatusIdle:
 		if prev == types.StatusBusy {
@@ -224,7 +293,7 @@ func (o *Orchestrator) handleTransition(
 			o.handleCompletion(ctx, inst, content)
 		}
 		o.worldState.UpdateAgent(id, AgentState{
-			Status:   types.StatusIdle,
+			Status:     types.StatusIdle,
 			LastActive: time.Now().UTC(),
 		})
 
@@ -235,6 +304,8 @@ func (o *Orchestrator) handleTransition(
 			Status:       types.StatusError,
 			LastDecision: errMsg,
 			LastActive:   time.Now().UTC(),
+			PhaseID:      existing.PhaseID,
+			AssignedAt:   existing.AssignedAt,
 		})
 
 	case types.StatusRateLimited:
@@ -243,12 +314,16 @@ func (o *Orchestrator) handleTransition(
 		o.worldState.UpdateAgent(id, AgentState{
 			Status:     types.StatusRateLimited,
 			LastActive: time.Now().UTC(),
+			PhaseID:    existing.PhaseID,
+			AssignedAt: existing.AssignedAt,
 		})
 
 	case types.StatusBusy:
 		o.worldState.UpdateAgent(id, AgentState{
 			Status:     types.StatusBusy,
 			LastActive: time.Now().UTC(),
+			PhaseID:    existing.PhaseID,
+			AssignedAt: existing.AssignedAt,
 		})
 	}
 }
@@ -256,6 +331,9 @@ func (o *Orchestrator) handleTransition(
 // handleCompletion processes a newly-ready agent's output.
 func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentInstance, content string) {
 	id := inst.Agent.ID
+
+	// Untrack from conflict detection.
+	o.conflicts.UntrackAssignment(id)
 
 	output, err := inst.Plugin.ParseOutput(content)
 	if err != nil {

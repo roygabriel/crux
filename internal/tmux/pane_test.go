@@ -251,6 +251,239 @@ func TestParsePaneList(t *testing.T) {
 	})
 }
 
+func TestPaneManagerCapture(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		paneID  string
+		lines   int
+		runFunc func(ctx context.Context, args ...string) (string, error)
+		want    string
+		wantErr bool
+	}{
+		{
+			name:   "success",
+			paneID: "%0",
+			lines:  100,
+			runFunc: func(_ context.Context, args ...string) (string, error) {
+				if args[0] != "capture-pane" {
+					t.Errorf("expected capture-pane, got %s", args[0])
+				}
+				// Verify -S flag is present with correct value.
+				found := false
+				for i, a := range args {
+					if a == "-S" && i+1 < len(args) && args[i+1] == "-100" {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("expected -S -100 in args %v", args)
+				}
+				return "$ echo hello\nhello\n$", nil
+			},
+			want: "$ echo hello\nhello\n$",
+		},
+		{
+			name:   "zero-lines-no-S-flag",
+			paneID: "%0",
+			lines:  0,
+			runFunc: func(_ context.Context, args ...string) (string, error) {
+				for _, a := range args {
+					if a == "-S" {
+						t.Errorf("unexpected -S flag in args %v", args)
+					}
+				}
+				return "visible content", nil
+			},
+			want: "visible content",
+		},
+		{
+			name:    "empty-pane-id",
+			paneID:  "",
+			lines:   50,
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:   "commander-error",
+			paneID: "%0",
+			lines:  50,
+			runFunc: func(_ context.Context, _ ...string) (string, error) {
+				return "", errors.New("pane not found")
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pm := NewPaneManager(&mockCommander{runFunc: tt.runFunc}, newTestLogger())
+			got, err := pm.Capture(context.Background(), tt.paneID, tt.lines)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Capture(%q, %d) error = %v, wantErr %v", tt.paneID, tt.lines, err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("Capture(%q, %d) = %q, want %q", tt.paneID, tt.lines, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPaneManagerSendKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		paneID  string
+		text    string
+		runFunc func(ctx context.Context, args ...string) (string, error)
+		wantErr bool
+	}{
+		{
+			name:   "success",
+			paneID: "%0",
+			text:   "echo hello",
+			runFunc: func(_ context.Context, args ...string) (string, error) {
+				if args[0] != "send-keys" {
+					t.Errorf("expected send-keys, got %s", args[0])
+				}
+				// Verify Enter is the last arg.
+				if args[len(args)-1] != "Enter" {
+					t.Errorf("expected last arg to be Enter, got %s", args[len(args)-1])
+				}
+				// Verify the text arg is present.
+				if args[3] != "echo hello" {
+					t.Errorf("expected text arg 'echo hello', got %s", args[3])
+				}
+				return "", nil
+			},
+		},
+		{
+			name:    "empty-pane-id",
+			paneID:  "",
+			text:    "echo hello",
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:    "unsafe-input-semicolon",
+			paneID:  "%0",
+			text:    "echo hello; rm -rf /",
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:    "unsafe-input-backtick",
+			paneID:  "%0",
+			text:    "echo `whoami`",
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:    "unsafe-input-newline",
+			paneID:  "%0",
+			text:    "line1\nline2",
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:   "commander-error",
+			paneID: "%0",
+			text:   "echo hello",
+			runFunc: func(_ context.Context, _ ...string) (string, error) {
+				return "", errors.New("pane not found")
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pm := NewPaneManager(&mockCommander{runFunc: tt.runFunc}, newTestLogger())
+			err := pm.SendKeys(context.Background(), tt.paneID, tt.text)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SendKeys(%q, %q) error = %v, wantErr %v", tt.paneID, tt.text, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestPaneManagerSendKeysRaw(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		paneID  string
+		keys    []string
+		runFunc func(ctx context.Context, args ...string) (string, error)
+		wantErr bool
+	}{
+		{
+			name:   "success-single-key",
+			paneID: "%0",
+			keys:   []string{"C-c"},
+			runFunc: func(_ context.Context, args ...string) (string, error) {
+				if args[0] != "send-keys" {
+					t.Errorf("expected send-keys, got %s", args[0])
+				}
+				if args[3] != "C-c" {
+					t.Errorf("expected C-c, got %s", args[3])
+				}
+				return "", nil
+			},
+		},
+		{
+			name:   "success-multiple-keys",
+			paneID: "%0",
+			keys:   []string{"Escape", ":", "q", "Enter"},
+			runFunc: func(_ context.Context, args ...string) (string, error) {
+				// args: send-keys -t %0 Escape : q Enter
+				if len(args) != 7 {
+					t.Errorf("expected 7 args, got %d: %v", len(args), args)
+				}
+				return "", nil
+			},
+		},
+		{
+			name:    "empty-pane-id",
+			paneID:  "",
+			keys:    []string{"C-c"},
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:    "no-keys",
+			paneID:  "%0",
+			keys:    []string{},
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:   "commander-error",
+			paneID: "%0",
+			keys:   []string{"C-c"},
+			runFunc: func(_ context.Context, _ ...string) (string, error) {
+				return "", errors.New("pane not found")
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pm := NewPaneManager(&mockCommander{runFunc: tt.runFunc}, newTestLogger())
+			err := pm.SendKeysRaw(context.Background(), tt.paneID, tt.keys...)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SendKeysRaw(%q, %v) error = %v, wantErr %v", tt.paneID, tt.keys, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestPaneManagerKill(t *testing.T) {
 	t.Parallel()
 

@@ -67,6 +67,67 @@ func (m *PaneManager) List(ctx context.Context, session string) ([]PaneInfo, err
 	return parsePaneList(out)
 }
 
+// Capture returns the visible content of a tmux pane. The lines parameter
+// controls how many lines of scrollback to capture (0 captures the visible area).
+func (m *PaneManager) Capture(ctx context.Context, paneID string, lines int) (string, error) {
+	if paneID == "" {
+		return "", fmt.Errorf("pane ID must not be empty")
+	}
+
+	args := []string{"capture-pane", "-t", paneID, "-p"}
+	if lines > 0 {
+		args = append(args, "-S", fmt.Sprintf("-%d", lines))
+	}
+
+	out, err := m.cmd.Run(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf("capture pane %q: %w", paneID, err)
+	}
+
+	return out, nil
+}
+
+// SendKeys sends sanitized text to a tmux pane followed by Enter.
+// The text is validated by SanitizeInput before sending. Callers must
+// not include newlines in text; use multiple SendKeys calls instead.
+func (m *PaneManager) SendKeys(ctx context.Context, paneID string, text string) error {
+	if paneID == "" {
+		return fmt.Errorf("pane ID must not be empty")
+	}
+
+	sanitized, err := SanitizeInput(text)
+	if err != nil {
+		return fmt.Errorf("send keys to pane %q: %w", paneID, err)
+	}
+
+	_, err = m.cmd.Run(ctx, "send-keys", "-t", paneID, sanitized, "Enter")
+	if err != nil {
+		return fmt.Errorf("send keys to pane %q: %w", paneID, err)
+	}
+
+	return nil
+}
+
+// SendKeysRaw sends literal key names to a tmux pane without appending Enter
+// and without sanitization. Use this for control sequences (e.g. "C-c", "Escape").
+func (m *PaneManager) SendKeysRaw(ctx context.Context, paneID string, keys ...string) error {
+	if paneID == "" {
+		return fmt.Errorf("pane ID must not be empty")
+	}
+
+	if len(keys) == 0 {
+		return fmt.Errorf("send raw keys to pane %q: no keys provided", paneID)
+	}
+
+	args := append([]string{"send-keys", "-t", paneID}, keys...)
+	_, err := m.cmd.Run(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("send raw keys to pane %q: %w", paneID, err)
+	}
+
+	return nil
+}
+
 // Kill destroys the specified pane.
 func (m *PaneManager) Kill(ctx context.Context, paneID string) error {
 	if paneID == "" {

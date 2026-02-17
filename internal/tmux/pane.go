@@ -1,0 +1,118 @@
+package tmux
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
+)
+
+// PaneInfo describes a tmux pane.
+type PaneInfo struct {
+	// ID is the tmux pane identifier (e.g. "%0").
+	ID string `json:"id"`
+	// PID is the process ID of the pane's shell.
+	PID int `json:"pid"`
+	// Command is the current command running in the pane.
+	Command string `json:"command"`
+}
+
+// PaneManager manages tmux panes within sessions via a Commander.
+type PaneManager struct {
+	cmd    Commander
+	logger *slog.Logger
+}
+
+// NewPaneManager creates a PaneManager backed by the given Commander.
+func NewPaneManager(cmd Commander, logger *slog.Logger) *PaneManager {
+	return &PaneManager{
+		cmd:    cmd,
+		logger: logger,
+	}
+}
+
+// Create splits a new pane in the given session, optionally starting in dir.
+// It returns the new pane's ID.
+func (m *PaneManager) Create(ctx context.Context, session string, dir string) (string, error) {
+	if err := validateSessionName(session); err != nil {
+		return "", err
+	}
+
+	args := []string{"split-window", "-t", session, "-P", "-F", "#{pane_id}"}
+	if dir != "" {
+		args = append(args, "-c", dir)
+	}
+
+	out, err := m.cmd.Run(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf("create pane in session %q: %w", session, err)
+	}
+
+	m.logger.Info("created tmux pane", "session", session, "pane_id", out)
+	return out, nil
+}
+
+// List returns information about all panes in the given session.
+func (m *PaneManager) List(ctx context.Context, session string) ([]PaneInfo, error) {
+	if err := validateSessionName(session); err != nil {
+		return nil, err
+	}
+
+	out, err := m.cmd.Run(ctx, "list-panes", "-t", session, "-F", "#{pane_id}:#{pane_pid}:#{pane_current_command}")
+	if err != nil {
+		return nil, fmt.Errorf("list panes in session %q: %w", session, err)
+	}
+
+	return parsePaneList(out)
+}
+
+// Kill destroys the specified pane.
+func (m *PaneManager) Kill(ctx context.Context, paneID string) error {
+	if paneID == "" {
+		return fmt.Errorf("pane ID must not be empty")
+	}
+
+	_, err := m.cmd.Run(ctx, "kill-pane", "-t", paneID)
+	if err != nil {
+		return fmt.Errorf("kill pane %q: %w", paneID, err)
+	}
+
+	m.logger.Info("killed tmux pane", "pane_id", paneID)
+	return nil
+}
+
+// parsePaneList parses the output of list-panes with format
+// "#{pane_id}:#{pane_pid}:#{pane_current_command}" into PaneInfo slices.
+// It uses SplitN with limit 3 to preserve colons in command names.
+func parsePaneList(output string) ([]PaneInfo, error) {
+	if output == "" {
+		return nil, nil
+	}
+
+	var panes []PaneInfo
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("parse pane line: expected 3 fields, got %d in %q", len(parts), line)
+		}
+
+		pid, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("parse pane PID %q: %w", parts[1], err)
+		}
+
+		panes = append(panes, PaneInfo{
+			ID:      parts[0],
+			PID:     pid,
+			Command: parts[2],
+		})
+	}
+
+	return panes, nil
+}

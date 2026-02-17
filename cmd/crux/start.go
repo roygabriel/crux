@@ -151,7 +151,7 @@ var startCmd = &cobra.Command{
 		defer stop()
 
 		if tuiFlag {
-			return runWithTUI(ctx, stop, orch, registry, rateLimiter, tracker)
+			return runWithTUI(ctx, stop, orch, registry, rateLimiter, tracker, auditLogger)
 		}
 
 		// Headless mode.
@@ -176,9 +176,23 @@ func runWithTUI(
 	registry *agent.Registry,
 	rateLimiter *security.RateLimiter,
 	tracker *phase.Tracker,
+	auditLogger *security.AuditLogger,
 ) error {
 	bridge := tui.NewStateBridge(1)
+	logBridge := tui.NewLogBridge(64)
 	worldState := orch.WorldState()
+
+	// Route audit entries to the TUI log panel.
+	auditLogger.SetHook(func(entry security.AuditEntry) {
+		logBridge.Send(tui.AuditToLogEntry(
+			entry.Timestamp,
+			string(entry.AgentID),
+			string(entry.Action),
+			entry.Target,
+			entry.Allowed,
+			entry.Reason,
+		))
+	})
 
 	// Set tick hook: builds a StateUpdate from live components and pushes it.
 	orch.SetTickHook(func() {
@@ -221,7 +235,7 @@ func runWithTUI(
 	}()
 
 	// Run TUI in foreground (blocks).
-	model := tui.NewModel(bridge)
+	model := tui.NewModel(bridge, logBridge)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		stop()

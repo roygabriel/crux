@@ -28,6 +28,7 @@ type AuditLogger struct {
 	mu   sync.Mutex
 	file *os.File
 	enc  *json.Encoder
+	hook func(AuditEntry)
 }
 
 // NewAuditLogger opens path for append-only JSONL writing. The file is
@@ -52,7 +53,19 @@ func (a *AuditLogger) Log(entry AuditEntry) error {
 	if entry.Timestamp.IsZero() {
 		entry.Timestamp = time.Now().UTC()
 	}
-	return a.enc.Encode(entry)
+	err := a.enc.Encode(entry)
+	if a.hook != nil {
+		a.hook(entry)
+	}
+	return err
+}
+
+// SetHook registers a function called after each audit entry is written.
+// The hook is called under the logger's mutex, so it must not block.
+func (a *AuditLogger) SetHook(fn func(AuditEntry)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.hook = fn
 }
 
 // Close closes the underlying file.

@@ -60,14 +60,21 @@ func successCommander(paneID string) *mockCommander {
 	}}
 }
 
+// newPluginRegistry creates a plugin.Registry with the given plugin
+// registered. If p is nil, the registry is empty.
+func newPluginRegistry(p plugin.AgentPlugin) *plugin.Registry {
+	plugins := plugin.NewRegistry()
+	if p != nil {
+		_ = plugins.Register(p.Name(), func() plugin.AgentPlugin { return p })
+	}
+	return plugins
+}
+
 func newTestRegistry(cmd tmux.Commander) *agent.Registry {
 	logger := newTestLogger()
 	sm := tmux.NewSessionManager(cmd, logger)
 	pm := tmux.NewPaneManager(cmd, logger)
-	plugins := plugin.NewRegistry()
-	_ = plugins.Register("claude", func() plugin.AgentPlugin {
-		return &stubPlugin{name: "claude"}
-	})
+	plugins := newPluginRegistry(&stubPlugin{name: "claude"})
 	return agent.NewRegistry(sm, pm, plugins, logger)
 }
 

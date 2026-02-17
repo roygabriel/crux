@@ -1,6 +1,7 @@
 // Package journal provides a high-level decision recording and retrieval layer
 // over the SQLite operational store. It handles validation, ID generation,
-// timestamp defaults, and export.
+// timestamp defaults, and export. When a vector index is provided, decisions
+// are also indexed for semantic similarity search.
 package journal
 
 import (
@@ -10,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/roygabriel/crux/internal/memory/store"
+	"github.com/roygabriel/crux/internal/memory/vector"
 	"github.com/roygabriel/crux/pkg/types"
 )
 
@@ -28,16 +31,19 @@ var (
 
 // Journal provides validated decision recording and retrieval.
 type Journal struct {
-	store *store.Store
+	store       *store.Store
+	vectorIndex *vector.VectorIndex
 }
 
-// NewJournal creates a Journal backed by the given store.
-func NewJournal(s *store.Store) *Journal {
-	return &Journal{store: s}
+// NewJournal creates a Journal backed by the given store. The vector index is
+// optional — pass nil to disable semantic search (FTS5 fallback is used).
+func NewJournal(s *store.Store, vi *vector.VectorIndex) *Journal {
+	return &Journal{store: s, vectorIndex: vi}
 }
 
 // Record validates a decision, generates an ID if empty, sets the timestamp
-// if zero, and persists it to the store.
+// if zero, and persists it to the store. If a vector index is configured,
+// the decision is also indexed for semantic search.
 func (j *Journal) Record(ctx context.Context, d types.Decision) error {
 	if d.Context == "" {
 		return ErrMissingContext
@@ -60,12 +66,54 @@ func (j *Journal) Record(ctx context.Context, d types.Decision) error {
 		d.Timestamp = time.Now().UTC()
 	}
 
-	return j.store.RecordDecision(ctx, d)
+	if err := j.store.RecordDecision(ctx, d); err != nil {
+		return err
+	}
+
+	if j.vectorIndex != nil {
+		embedText := fmt.Sprintf("Phase %s Prompt %d: %s — Decision: %s because %s",
+			d.PhaseID, d.PromptNum, d.Context, d.Action, d.Rationale)
+		metadata := map[string]string{
+			"phase_id": string(d.PhaseID),
+			"agent_id": string(d.AgentID),
+			"id":       d.ID,
+		}
+		if err := j.vectorIndex.Add(ctx, d.ID, embedText, metadata); err != nil {
+			slog.Warn("failed to index decision in vector store", "id", d.ID, "error", err)
+		}
+	}
+
+	return nil
 }
 
 // Search performs a full-text search over decisions.
 func (j *Journal) Search(ctx context.Context, query string, n int) ([]types.Decision, error) {
 	return j.store.SearchDecisions(ctx, query, n)
+}
+
+// SemanticSearch performs a vector similarity search when a vector index is
+// available, falling back to FTS5 keyword search otherwise.
+func (j *Journal) SemanticSearch(ctx context.Context, query string, n int) ([]types.Decision, error) {
+	if j.vectorIndex == nil {
+		return j.store.SearchDecisions(ctx, query, n)
+	}
+
+	results, err := j.vectorIndex.Search(ctx, query, n, nil)
+	if err != nil {
+		return nil, fmt.Errorf("vector search: %w", err)
+	}
+
+	decisions := make([]types.Decision, 0, len(results))
+	for _, r := range results {
+		d, err := j.store.GetDecision(ctx, r.ID)
+		if err != nil {
+			return nil, fmt.Errorf("fetching decision %s: %w", r.ID, err)
+		}
+		if d != nil {
+			decisions = append(decisions, *d)
+		}
+	}
+	return decisions, nil
 }
 
 // ByPhase returns all decisions for the given phase.

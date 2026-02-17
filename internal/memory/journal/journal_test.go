@@ -3,14 +3,19 @@ package journal_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
 
+	chromem "github.com/philippgille/chromem-go"
+
 	"github.com/roygabriel/crux/internal/memory/journal"
 	"github.com/roygabriel/crux/internal/memory/store"
+	"github.com/roygabriel/crux/internal/memory/vector"
 	"github.com/roygabriel/crux/pkg/types"
 )
 
@@ -25,7 +30,46 @@ func newTestJournal(t *testing.T) *journal.Journal {
 		t.Fatalf("Migrate() error: %v", err)
 	}
 	t.Cleanup(func() { s.Close() })
-	return journal.NewJournal(s)
+	return journal.NewJournal(s, nil)
+}
+
+// testEmbedder returns a deterministic embedding function for testing.
+func testEmbedder() chromem.EmbeddingFunc {
+	return func(_ context.Context, text string) ([]float32, error) {
+		h := sha256.Sum256([]byte(text))
+		v := make([]float32, 32)
+		var norm float64
+		for i := range v {
+			v[i] = float32(int8(h[i]))
+			norm += float64(v[i]) * float64(v[i])
+		}
+		norm = math.Sqrt(norm)
+		for i := range v {
+			v[i] /= float32(norm)
+		}
+		return v, nil
+	}
+}
+
+func newTestJournalWithVector(t *testing.T) *journal.Journal {
+	t.Helper()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	s, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewStore() error: %v", err)
+	}
+	if err := s.Migrate(); err != nil {
+		t.Fatalf("Migrate() error: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	vi, err := vector.NewVectorIndex(filepath.Join(dir, "vectors"), testEmbedder())
+	if err != nil {
+		t.Fatalf("NewVectorIndex() error: %v", err)
+	}
+
+	return journal.NewJournal(s, vi)
 }
 
 func validDecision() types.Decision {
@@ -289,5 +333,93 @@ func TestExportEmpty(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Errorf("expected empty export, got %d bytes", buf.Len())
+	}
+}
+
+// --- Vector search tests ---
+
+func TestRecordWritesToVectorIndex(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	s, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewStore() error: %v", err)
+	}
+	if err := s.Migrate(); err != nil {
+		t.Fatalf("Migrate() error: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	vi, err := vector.NewVectorIndex(filepath.Join(dir, "vectors"), testEmbedder())
+	if err != nil {
+		t.Fatalf("NewVectorIndex() error: %v", err)
+	}
+
+	j := journal.NewJournal(s, vi)
+	ctx := context.Background()
+
+	if vi.Count() != 0 {
+		t.Fatalf("expected 0 vector docs before record, got %d", vi.Count())
+	}
+
+	d := validDecision()
+	if err := j.Record(ctx, d); err != nil {
+		t.Fatalf("Record() error: %v", err)
+	}
+
+	if vi.Count() != 1 {
+		t.Errorf("expected 1 vector doc after record, got %d", vi.Count())
+	}
+}
+
+func TestSemanticSearchWithVector(t *testing.T) {
+	t.Parallel()
+	j := newTestJournalWithVector(t)
+	ctx := context.Background()
+
+	d1 := validDecision()
+	d1.Context = "choosing between REST and GraphQL for the API layer"
+	d1.Action = "use REST endpoints"
+	d1.Rationale = "simpler client implementation and team familiarity"
+	j.Record(ctx, d1)
+
+	d2 := validDecision()
+	d2.Context = "selecting the database migration tool"
+	d2.Action = "use goose for migrations"
+	d2.Rationale = "good Go ecosystem support"
+	j.Record(ctx, d2)
+
+	results, err := j.SemanticSearch(ctx, "API design REST GraphQL", 2)
+	if err != nil {
+		t.Fatalf("SemanticSearch() error: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least 1 semantic search result")
+	}
+	// The first result should be the API-related decision.
+	if results[0].Context != d1.Context {
+		t.Errorf("expected first result about API, got context %q", results[0].Context)
+	}
+}
+
+func TestSemanticSearchFallsBackToFTS5(t *testing.T) {
+	t.Parallel()
+	j := newTestJournal(t) // nil vector index
+	ctx := context.Background()
+
+	d := validDecision()
+	d.Context = "refactoring authentication module"
+	j.Record(ctx, d)
+
+	results, err := j.SemanticSearch(ctx, "authentication", 10)
+	if err != nil {
+		t.Fatalf("SemanticSearch() error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 FTS5 fallback result, got %d", len(results))
+	}
+	if results[0].Context != d.Context {
+		t.Errorf("expected context %q, got %q", d.Context, results[0].Context)
 	}
 }

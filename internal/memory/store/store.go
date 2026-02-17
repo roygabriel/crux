@@ -143,6 +143,21 @@ func (s *Store) QueryDecisions(ctx context.Context, f DecisionFilter) ([]types.D
 	return s.scanDecisions(ctx, query, args...)
 }
 
+// GetDecision retrieves a single decision by its ID. Returns nil if not found.
+func (s *Store) GetDecision(ctx context.Context, id string) (*types.Decision, error) {
+	decisions, err := s.scanDecisions(ctx,
+		"SELECT id, timestamp, phase_id, prompt_num, agent_id, context, rationale, action, outcome FROM decisions WHERE id = ?",
+		id,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting decision %s: %w", id, err)
+	}
+	if len(decisions) == 0 {
+		return nil, nil
+	}
+	return &decisions[0], nil
+}
+
 // SearchDecisions performs a full-text search over decisions using FTS5.
 func (s *Store) SearchDecisions(ctx context.Context, queryText string, limit int) ([]types.Decision, error) {
 	query := `SELECT d.id, d.timestamp, d.phase_id, d.prompt_num, d.agent_id, d.context, d.rationale, d.action, d.outcome

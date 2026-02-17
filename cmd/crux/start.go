@@ -19,7 +19,9 @@ import (
 	"github.com/roygabriel/crux/internal/phase"
 	"github.com/roygabriel/crux/internal/plugin"
 	"github.com/roygabriel/crux/internal/pluginloader"
+	"github.com/roygabriel/crux/internal/security"
 	"github.com/roygabriel/crux/internal/tmux"
+	"github.com/roygabriel/crux/pkg/types"
 	"github.com/spf13/cobra"
 )
 
@@ -102,11 +104,27 @@ var startCmd = &cobra.Command{
 		sessDir := filepath.Join(cfg.Project.StateDir, "sessions")
 		sessionMgr := session.NewManager(sessDir, st, log)
 
+		// Security middleware.
+		sandbox, err := security.NewSandbox(cfg.Project.Root, cfg.Security.AllowedPaths, cfg.Security.DeniedPaths, log)
+		if err != nil {
+			return fmt.Errorf("create sandbox: %w", err)
+		}
+		enforcer := security.NewEnforcer(sandbox, log)
+		auditLogger, err := security.NewAuditLogger(filepath.Join(cfg.Project.StateDir, "audit.log"))
+		if err != nil {
+			return fmt.Errorf("create audit logger: %w", err)
+		}
+		defer auditLogger.Close()
+		secMiddleware := security.NewSecurityMiddleware(enforcer, auditLogger, log)
+
+		messenger.SetMessageGate(secMiddleware)
+
 		// Build orchestrator.
 		orch := orchestrator.New(
 			cfg, registry, engine, completion, contextBld, tracker,
 			watcher, messenger, sessionMgr, notesMgr, j, log,
 		)
+		orch.SetSecurityGate(&securityAdapter{mw: secMiddleware})
 
 		// Signal handling: SIGINT/SIGTERM cancel the context.
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -118,4 +136,13 @@ var startCmd = &cobra.Command{
 
 		return orch.Stop(context.Background())
 	},
+}
+
+// securityAdapter adapts *security.SecurityMiddleware to orchestrator.SecurityGate.
+type securityAdapter struct {
+	mw *security.SecurityMiddleware
+}
+
+func (a *securityAdapter) Gate(agentID types.AgentID, perm types.Permission, action, target string, phaseID types.PhaseID, promptNum int) error {
+	return a.mw.GateString(agentID, perm, action, target, phaseID, promptNum)
 }

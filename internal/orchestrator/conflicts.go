@@ -64,6 +64,7 @@ type ConflictDetector struct {
 	worldState *WorldState
 	workNotes  WorkNotesAppender
 	journal    DecisionRecorder
+	security   SecurityGate
 	logger     *slog.Logger
 	interval   time.Duration
 	mu         sync.RWMutex
@@ -98,6 +99,11 @@ func NewConflictDetector(
 		interval:   interval,
 		tracked:    make(map[types.AgentID]trackedAssignment),
 	}
+}
+
+// SetSecurityGate configures the security gate for conflict audit logging.
+func (cd *ConflictDetector) SetSecurityGate(g SecurityGate) {
+	cd.security = g
 }
 
 // CheckBeforeAssign validates that two phases can run in parallel.
@@ -287,6 +293,13 @@ func (cd *ConflictDetector) HandleConflict(ctx context.Context, event ConflictEv
 	}
 	if err := cd.journal.Record(ctx, decision); err != nil {
 		cd.logger.Warn("failed to record conflict decision", "error", err)
+	}
+
+	// Audit the conflict event if security gate is configured.
+	if cd.security != nil {
+		conflictTarget := fmt.Sprintf("conflict:%s:%s:%s", laterAgent, earlierAgent, filesStr)
+		// Audit-only: ignore errors from the gate call.
+		_ = cd.security.Gate(laterAgent, "", "file_write", conflictTarget, laterPhase, 0)
 	}
 
 	cd.logger.Warn("file conflict resolved",

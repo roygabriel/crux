@@ -23,6 +23,7 @@ func DefaultConfig() *Config {
 			AuditLog:           ".crux/audit.log",
 			MaxCmdsPerMin:      60,
 			MaxFilesPerSession: 100,
+			DeniedPaths:        []string{".git/", ".env", ".crux/audit.log"},
 		},
 		Context: ContextConfig{
 			TotalBudget: 8000,

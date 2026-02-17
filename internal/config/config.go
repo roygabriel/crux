@@ -100,6 +100,8 @@ type SecurityConfig struct {
 	MaxFilesPerSession int `yaml:"max_files_per_session" json:"max_files_per_session"`
 	// AllowedPaths restricts file operations to these path prefixes.
 	AllowedPaths []string `yaml:"allowed_paths" json:"allowed_paths,omitempty"`
+	// DeniedPaths blocks file operations on these paths (glob or prefix with trailing /).
+	DeniedPaths []string `yaml:"denied_paths" json:"denied_paths,omitempty"`
 }
 
 // ContextConfig configures the orchestrator context budget for prompt injection.

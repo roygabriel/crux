@@ -19,6 +19,11 @@ import (
 
 const defaultPollInterval = 2 * time.Second
 
+// SecurityGate checks permission before executing an action.
+type SecurityGate interface {
+	Gate(agentID types.AgentID, perm types.Permission, action string, target string, phaseID types.PhaseID, promptNum int) error
+}
+
 // Orchestrator runs the main control loop: polls agents, updates world state,
 // detects completion, runs gates, advances phases, and assigns work.
 type Orchestrator struct {
@@ -38,6 +43,9 @@ type Orchestrator struct {
 	journal      *journal.Journal
 	logger       *slog.Logger
 	pollInterval time.Duration
+
+	// security gates agent actions against their permission tier.
+	security SecurityGate
 
 	// conflicts detects and resolves file conflicts between parallel agents.
 	conflicts *ConflictDetector
@@ -109,6 +117,11 @@ func New(
 		paneContent:  make(map[types.AgentID]string),
 		prevStatus:   make(map[types.AgentID]types.AgentStatus),
 	}
+}
+
+// SetSecurityGate configures the security gate for action checks.
+func (o *Orchestrator) SetSecurityGate(g SecurityGate) {
+	o.security = g
 }
 
 // Run executes the main orchestration loop. It blocks until the context is
@@ -349,6 +362,26 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 	prompt := o.engine.CurrentPrompt()
 	if prompt == nil {
 		return
+	}
+
+	// Gate verification commands and file writes before running completion.
+	if o.security != nil {
+		for _, gate := range spec.ExitCriteria {
+			if gate.Command != "" {
+				if err := o.security.Gate(id, inst.Agent.Permission, "shell_exec", gate.Command, spec.ID, prompt.PromptNumber); err != nil {
+					o.logger.Warn("security gate denied verification command",
+						"agent_id", id, "command", gate.Command, "error", err)
+					return
+				}
+			}
+		}
+		for _, f := range append(spec.FilesNew, spec.FilesModified...) {
+			if err := o.security.Gate(id, inst.Agent.Permission, "file_write", f, spec.ID, prompt.PromptNumber); err != nil {
+				o.logger.Warn("security gate denied file write",
+					"agent_id", id, "file", f, "error", err)
+				return
+			}
+		}
 	}
 
 	result, err := o.completion.HandleCompletion(ctx, spec.ID, prompt.PromptNumber, output)

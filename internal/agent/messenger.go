@@ -13,6 +13,11 @@ import (
 
 const defaultPollInterval = time.Second
 
+// MessageGate checks whether sending a message to an agent is permitted.
+type MessageGate interface {
+	GateMessage(agentID types.AgentID, perm types.Permission, action, target string) error
+}
+
 // Messenger sends messages to agents and waits for responses by
 // coordinating between the plugin layer (formatting) and the tmux
 // layer (transport).
@@ -21,6 +26,7 @@ type Messenger struct {
 	registry     *Registry
 	logger       *slog.Logger
 	pollInterval time.Duration
+	gate         MessageGate
 }
 
 // NewMessenger creates a Messenger backed by the given PaneManager
@@ -39,6 +45,11 @@ func (m *Messenger) SetPollInterval(d time.Duration) {
 	m.pollInterval = d
 }
 
+// SetMessageGate configures an optional security gate for message sends.
+func (m *Messenger) SetMessageGate(g MessageGate) {
+	m.gate = g
+}
+
 // Send formats a message using the target agent's plugin and sends it
 // to the agent's tmux pane. Large messages are split into chunks that
 // stay under tmux send-keys limits. Each chunk is sent as a separate
@@ -47,6 +58,12 @@ func (m *Messenger) Send(ctx context.Context, agentID types.AgentID, msg types.M
 	inst, err := m.registry.Get(agentID)
 	if err != nil {
 		return fmt.Errorf("send to agent %q: %w", agentID, err)
+	}
+
+	if m.gate != nil {
+		if err := m.gate.GateMessage(agentID, inst.Agent.Permission, "message_send", string(msg.Type)); err != nil {
+			return fmt.Errorf("send to agent %q: %w", agentID, err)
+		}
 	}
 
 	text := inst.Plugin.FormatMessage(msg)

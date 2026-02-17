@@ -123,6 +123,16 @@ var startCmd = &cobra.Command{
 		gitGuard := security.NewGitGuard(cfg.Project.Root, log)
 		secMiddleware.SetGitGuard(gitGuard)
 
+		secretsScanner := security.NewSecretsScanner(log)
+		secMiddleware.SetSecretsScanner(secretsScanner)
+
+		secretsPath := filepath.Join(cfg.Project.StateDir, "secrets.env")
+		secretsMgr := security.NewSecretsManager(secretsPath, log)
+		if err := secretsMgr.Load(); err != nil {
+			log.Warn("secrets manager load failed", "error", err)
+		}
+		secMiddleware.SetSecretsManager(secretsMgr)
+
 		messenger.SetMessageGate(secMiddleware)
 
 		// Build orchestrator.

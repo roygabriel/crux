@@ -16,6 +16,8 @@ type SecurityMiddleware struct {
 	logger      *slog.Logger
 	rateLimiter *RateLimiter
 	gitGuard    *GitGuard
+	scanner     *SecretsScanner
+	secretsMgr  *SecretsManager
 }
 
 // NewSecurityMiddleware creates a SecurityMiddleware with the given enforcer
@@ -41,6 +43,18 @@ func (m *SecurityMiddleware) SetRateLimiter(rl *RateLimiter) {
 // enforces branch protection and feature-branch requirements.
 func (m *SecurityMiddleware) SetGitGuard(g *GitGuard) {
 	m.gitGuard = g
+}
+
+// SetSecretsScanner configures the secrets scanner. When set, Gate() blocks
+// file reads of known secrets files that contain detected secrets.
+func (m *SecurityMiddleware) SetSecretsScanner(s *SecretsScanner) {
+	m.scanner = s
+}
+
+// SetSecretsManager configures the secrets manager. When set, Gate() redacts
+// secret values from audit log targets.
+func (m *SecurityMiddleware) SetSecretsManager(mgr *SecretsManager) {
+	m.secretsMgr = mgr
 }
 
 // Gate checks whether agentID with perm may perform action on target. It logs
@@ -91,13 +105,28 @@ func (m *SecurityMiddleware) Gate(
 		}
 	}
 
+	// Pre-check: secrets file read denial.
+	if m.scanner != nil && action == ActionFileRead && isKnownSecretsFile(target) {
+		findings, err := m.scanner.ScanFile(target)
+		if err == nil && len(findings) > 0 {
+			m.logDenial(agentID, action, target, perm, "secrets_file_denied", phaseID, promptNum)
+			return fmt.Errorf("action %s denied for %s: %w", action, agentID, types.ErrPermissionDenied)
+		}
+	}
+
 	// Enforcer check.
 	result := m.enforcer.Check(perm, action, target)
+
+	// Redact secrets from audit target.
+	auditTarget := target
+	if m.secretsMgr != nil {
+		auditTarget = m.secretsMgr.Redact(target)
+	}
 
 	entry := AuditEntry{
 		AgentID:    agentID,
 		Action:     action,
-		Target:     target,
+		Target:     auditTarget,
 		Permission: perm,
 		Allowed:    result.Allowed,
 		Reason:     result.Reason,

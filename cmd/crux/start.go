@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/roygabriel/crux/internal/agent"
 	"github.com/roygabriel/crux/internal/config"
 	"github.com/roygabriel/crux/internal/memory/bank"
@@ -21,9 +22,12 @@ import (
 	"github.com/roygabriel/crux/internal/pluginloader"
 	"github.com/roygabriel/crux/internal/security"
 	"github.com/roygabriel/crux/internal/tmux"
+	"github.com/roygabriel/crux/internal/tui"
 	"github.com/roygabriel/crux/pkg/types"
 	"github.com/spf13/cobra"
 )
+
+var tuiFlag bool
 
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -146,12 +150,93 @@ var startCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
 
+		if tuiFlag {
+			return runWithTUI(ctx, stop, orch, registry, rateLimiter, tracker)
+		}
+
+		// Headless mode.
 		if err := orch.Run(ctx); err != nil {
 			return fmt.Errorf("orchestrator: %w", err)
 		}
 
 		return orch.Stop(context.Background())
 	},
+}
+
+func init() {
+	startCmd.Flags().BoolVar(&tuiFlag, "tui", false, "Launch terminal dashboard")
+}
+
+// runWithTUI starts the orchestrator in a background goroutine and runs the
+// bubbletea TUI in the foreground. Either exiting cancels the other.
+func runWithTUI(
+	ctx context.Context,
+	stop context.CancelFunc,
+	orch *orchestrator.Orchestrator,
+	registry *agent.Registry,
+	rateLimiter *security.RateLimiter,
+	tracker *phase.Tracker,
+) error {
+	bridge := tui.NewStateBridge(1)
+	worldState := orch.WorldState()
+
+	// Set tick hook: builds a StateUpdate from live components and pushes it.
+	orch.SetTickHook(func() {
+		snap := worldState.Snapshot()
+		agents := registry.List()
+
+		snapshots := make([]tui.AgentSnapshot, 0, len(agents))
+		for _, inst := range agents {
+			as, _ := worldState.GetAgent(inst.Agent.ID)
+			cmds, files := rateLimiter.Stats(inst.Agent.ID)
+
+			snapshots = append(snapshots, tui.AgentSnapshot{
+				ID:             inst.Agent.ID,
+				Name:           inst.Agent.Name,
+				Plugin:         inst.Agent.Plugin,
+				Role:           inst.Agent.Role,
+				Status:         inst.Agent.Status,
+				PromptDisplay:  as.PromptDisplay,
+				Task:           as.Task,
+				CommandsPerMin: cmds,
+				FilesSession:   files,
+			})
+		}
+
+		bridge.Push(tui.StateUpdate{
+			Phase:        snap.Phase,
+			PhaseName:    snap.PhaseName,
+			Agents:       snapshots,
+			Progress:     tracker.OverallProgress(),
+			GatesPassed:  len(snap.GatesPassed),
+			GatesPending: len(snap.GatesPending),
+			Timestamp:    snap.UpdatedAt,
+		})
+	})
+
+	// Run orchestrator in background.
+	orchErr := make(chan error, 1)
+	go func() {
+		orchErr <- orch.Run(ctx)
+	}()
+
+	// Run TUI in foreground (blocks).
+	model := tui.NewModel(bridge)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		stop()
+		return fmt.Errorf("tui: %w", err)
+	}
+
+	// TUI exited — shut down orchestrator.
+	stop()
+	if err := <-orchErr; err != nil {
+		// Context cancellation is expected on TUI exit.
+		if ctx.Err() == nil {
+			return fmt.Errorf("orchestrator: %w", err)
+		}
+	}
+	return orch.Stop(context.Background())
 }
 
 // securityAdapter adapts *security.SecurityMiddleware to orchestrator.SecurityGate.

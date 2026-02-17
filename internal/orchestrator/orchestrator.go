@@ -47,6 +47,9 @@ type Orchestrator struct {
 	// security gates agent actions against their permission tier.
 	security SecurityGate
 
+	// tickHook is called at the end of each tick for external consumers (e.g. TUI).
+	tickHook func()
+
 	// conflicts detects and resolves file conflicts between parallel agents.
 	conflicts *ConflictDetector
 
@@ -122,6 +125,16 @@ func New(
 // SetSecurityGate configures the security gate for action checks.
 func (o *Orchestrator) SetSecurityGate(g SecurityGate) {
 	o.security = g
+}
+
+// SetTickHook registers a function called at the end of each tick iteration.
+func (o *Orchestrator) SetTickHook(fn func()) {
+	o.tickHook = fn
+}
+
+// WorldState returns the orchestrator's world state for external read access.
+func (o *Orchestrator) WorldState() *WorldState {
+	return o.worldState
 }
 
 // Run executes the main orchestration loop. It blocks until the context is
@@ -256,6 +269,11 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 	// Check if all phases are complete.
 	if o.engine.CurrentPhase() == nil {
 		o.logger.Info("all phases complete")
+	}
+
+	// Notify external consumers (e.g. TUI) that a tick completed.
+	if o.tickHook != nil {
+		o.tickHook()
 	}
 
 	return nil

@@ -80,6 +80,45 @@ func (w *WorldState) GetAgent(id types.AgentID) (AgentState, bool) {
 	return state, ok
 }
 
+// StateSnapshot is a deep copy of WorldState for safe consumption outside
+// the orchestrator goroutine.
+type StateSnapshot struct {
+	SessionID    string                       `json:"session_id"`
+	Phase        types.PhaseID                `json:"phase"`
+	PhaseName    string                       `json:"phase_name"`
+	Agents       map[types.AgentID]AgentState `json:"agents"`
+	GatesPassed  []string                     `json:"gates_passed"`
+	GatesPending []string                     `json:"gates_pending"`
+	UpdatedAt    time.Time                    `json:"updated_at"`
+}
+
+// Snapshot returns a deep copy of the world state. It is safe for concurrent use.
+func (w *WorldState) Snapshot() StateSnapshot {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	agents := make(map[types.AgentID]AgentState, len(w.Agents))
+	for id, a := range w.Agents {
+		agents[id] = a
+	}
+
+	gatesPassed := make([]string, len(w.GatesPassed))
+	copy(gatesPassed, w.GatesPassed)
+
+	gatesPending := make([]string, len(w.GatesPending))
+	copy(gatesPending, w.GatesPending)
+
+	return StateSnapshot{
+		SessionID:    w.SessionID,
+		Phase:        w.Phase,
+		PhaseName:    w.PhaseName,
+		Agents:       agents,
+		GatesPassed:  gatesPassed,
+		GatesPending: gatesPending,
+		UpdatedAt:    w.UpdatedAt,
+	}
+}
+
 // compactAgent is the minimal agent representation for prompt injection.
 type compactAgent struct {
 	Status string `json:"status"`

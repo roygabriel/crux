@@ -1,8 +1,10 @@
 package security
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/roygabriel/crux/pkg/types"
 )
@@ -13,6 +15,7 @@ type SecurityMiddleware struct {
 	audit       *AuditLogger
 	logger      *slog.Logger
 	rateLimiter *RateLimiter
+	gitGuard    *GitGuard
 }
 
 // NewSecurityMiddleware creates a SecurityMiddleware with the given enforcer
@@ -32,6 +35,12 @@ func NewSecurityMiddleware(enforcer *Enforcer, audit *AuditLogger, logger *slog.
 // enforces command-per-minute and file-per-session limits.
 func (m *SecurityMiddleware) SetRateLimiter(rl *RateLimiter) {
 	m.rateLimiter = rl
+}
+
+// SetGitGuard configures the git branch safety guard. When set, Gate()
+// enforces branch protection and feature-branch requirements.
+func (m *SecurityMiddleware) SetGitGuard(g *GitGuard) {
+	m.gitGuard = g
 }
 
 // Gate checks whether agentID with perm may perform action on target. It logs
@@ -57,6 +66,27 @@ func (m *SecurityMiddleware) Gate(
 			if err := m.rateLimiter.CheckFileModification(agentID, target); err != nil {
 				m.logDenial(agentID, action, target, perm, "file_limit", phaseID, promptNum)
 				return fmt.Errorf("action %s denied for %s: %w", action, agentID, types.ErrFileLimit)
+			}
+		}
+	}
+
+	// Pre-check: git safety.
+	if m.gitGuard != nil {
+		if action == ActionGitPush {
+			if err := m.gitGuard.ValidateNotProtected(target); err != nil {
+				m.logDenial(agentID, action, target, perm, "protected_branch", phaseID, promptNum)
+				return fmt.Errorf("action %s denied for %s: %w", action, agentID, types.ErrPermissionDenied)
+			}
+			if err := m.gitGuard.PrePushCheck(context.Background(), target); err != nil {
+				m.logDenial(agentID, action, target, perm, "push_not_feature_branch", phaseID, promptNum)
+				return fmt.Errorf("action %s denied for %s: %w", action, agentID, types.ErrPermissionDenied)
+			}
+		}
+		if action == ActionGitCommit {
+			branch, err := m.gitGuard.currentBranch(context.Background())
+			if err == nil && !strings.HasPrefix(branch, "crux/") {
+				m.logDenial(agentID, action, target, perm, "commit_not_feature_branch", phaseID, promptNum)
+				return fmt.Errorf("action %s denied for %s: %w", action, agentID, types.ErrPermissionDenied)
 			}
 		}
 	}

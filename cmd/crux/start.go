@@ -120,6 +120,9 @@ var startCmd = &cobra.Command{
 		rateLimiter := security.NewRateLimiter(cfg.Security.MaxCmdsPerMin, cfg.Security.MaxFilesPerSession, log)
 		secMiddleware.SetRateLimiter(rateLimiter)
 
+		gitGuard := security.NewGitGuard(cfg.Project.Root, log)
+		secMiddleware.SetGitGuard(gitGuard)
+
 		messenger.SetMessageGate(secMiddleware)
 
 		// Build orchestrator.

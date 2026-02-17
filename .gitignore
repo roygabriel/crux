@@ -40,3 +40,13 @@ templates/
 LLM.md
 CLAUDE.md
 docs/phases/
+
+# Crux state (sensitive — not config)
+.crux/memory.db
+.crux/vectors/
+.crux/audit.log
+.crux/secrets.env
+
+# Working notes (local only)
+work-notes/
+docs/notes/

@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	focusedBorder  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("141"))
+	focusedBorder   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("141"))
 	unfocusedBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240"))
 )
 
@@ -27,6 +27,7 @@ type Model struct {
 	bridge      *StateBridge
 	state       StateUpdate
 	activePanel Panel
+	agentsPanel AgentsPanel
 	width       int
 	height      int
 	ready       bool
@@ -37,6 +38,7 @@ func NewModel(bridge *StateBridge) Model {
 	return Model{
 		bridge:      bridge,
 		activePanel: PanelAgents,
+		agentsPanel: NewAgentsPanel(),
 	}
 }
 
@@ -59,6 +61,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.activePanel = PanelAgents
 			}
+			m.agentsPanel.SetFocused(m.activePanel == PanelAgents)
 		}
 
 	case tea.WindowSizeMsg:
@@ -66,8 +69,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 
+		agentsHeight := m.height * 40 / 100
+		if agentsHeight < 8 {
+			agentsHeight = 8
+		}
+		innerW := m.width - 4
+		if innerW < 0 {
+			innerW = 0
+		}
+		agentsInnerH := agentsHeight - 4
+		if agentsInnerH < 0 {
+			agentsInnerH = 0
+		}
+		m.agentsPanel.SetSize(innerW, agentsInnerH)
+
 	case StateUpdateMsg:
 		m.state = msg.State
+		m.agentsPanel.SetAgents(msg.State.Agents)
 		return m, WaitForUpdate(m.bridge)
 	}
 
@@ -109,17 +127,13 @@ func (m Model) View() string {
 		logsBorder = focusedBorder
 	}
 
-	agentsContent := renderAgentPlaceholder(innerW, agentsInnerH)
+	agentsContent := m.agentsPanel.View()
 	logsContent := renderLogPlaceholder(innerW, logsInnerH)
 
 	top := agentsBorder.Width(innerW).Height(agentsInnerH).Render(agentsContent)
 	bottom := logsBorder.Width(innerW).Height(logsInnerH).Render(logsContent)
 
 	return fmt.Sprintf("%s\n%s", top, bottom)
-}
-
-func renderAgentPlaceholder(w, h int) string {
-	return "Agents"
 }
 
 func renderLogPlaceholder(w, h int) string {

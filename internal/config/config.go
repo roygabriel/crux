@@ -23,6 +23,29 @@ type Config struct {
 	Phases PhaseConfig `yaml:"phases" json:"phases"`
 	// Security configures sandboxing, auditing, and rate limiting.
 	Security SecurityConfig `yaml:"security" json:"security"`
+	// GenericPlugins maps custom plugin names to their regex-based configuration.
+	GenericPlugins map[string]GenericPluginConfig `yaml:"generic_plugins" json:"generic_plugins,omitempty"`
+}
+
+// GenericPluginConfig holds user-supplied configuration for a generic
+// plugin adapter with regex-based detection patterns.
+type GenericPluginConfig struct {
+	// Name is the display name for this plugin.
+	Name string `yaml:"name" json:"name"`
+	// Binary is the executable to launch.
+	Binary string `yaml:"binary" json:"binary"`
+	// Args are default CLI arguments.
+	Args []string `yaml:"args" json:"args,omitempty"`
+	// ReadyPattern is a regex matched against the last non-empty line.
+	ReadyPattern string `yaml:"ready_pattern" json:"ready_pattern"`
+	// BusyPattern is a regex matched against the tail of pane content.
+	BusyPattern string `yaml:"busy_pattern" json:"busy_pattern"`
+	// ErrorPattern is a regex with a capture group for the error message.
+	ErrorPattern string `yaml:"error_pattern" json:"error_pattern"`
+	// RateLimitPattern is a regex for rate-limit detection.
+	RateLimitPattern string `yaml:"rate_limit_pattern" json:"rate_limit_pattern,omitempty"`
+	// Capabilities lists the capability strings this plugin supports.
+	Capabilities []string `yaml:"capabilities" json:"capabilities,omitempty"`
 }
 
 // ProjectConfig holds project-level identification and paths.
@@ -116,6 +139,9 @@ func (c *Config) Validate() error {
 
 	validPlugins := map[string]bool{
 		"claude": true, "codex": true, "gemini": true, "generic": true,
+	}
+	for name := range c.GenericPlugins {
+		validPlugins[name] = true
 	}
 	validRoles := map[string]bool{
 		"orchestrator": true, "project-manager": true, "engineer": true,

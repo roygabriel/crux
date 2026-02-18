@@ -1,0 +1,27 @@
+[[- if .Phase.CurrentID -]]
+## Current Phase: [[ .Phase.CurrentID ]] — [[ .Phase.CurrentName ]]
+
+Progress: [[ .Phase.Progress ]]
+
+[[- if .Phase.FilesInScope ]]
+
+### Files In Scope
+
+[[ bullet .Phase.FilesInScope -]]
+[[- end ]]
+
+[[- if .Phase.FilesReadOnly ]]
+
+### Read-Only References
+
+[[ bullet .Phase.FilesReadOnly -]]
+[[- end ]]
+
+[[- if .Phase.ExitCriteria ]]
+
+### Exit Criteria
+
+[[ bullet .Phase.ExitCriteria -]]
+[[- end ]]
+
+[[ end -]]

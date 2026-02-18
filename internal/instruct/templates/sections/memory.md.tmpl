@@ -1,0 +1,11 @@
+[[- if ifdef .Memory.ActiveContext -]]
+## Active Context
+
+[[ .Memory.ActiveContext ]]
+
+[[ end -]]
+[[- if .Memory.RecentDecisions -]]
+## Recent Decisions
+
+[[ bullet .Memory.RecentDecisions ]]
+[[ end -]]

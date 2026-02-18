@@ -1,0 +1,53 @@
+[[- if ifdef .Prefs.Testing -]]
+## Engineering Standards
+
+[[- if ifdef .Prefs.Testing ]]
+
+### Testing
+
+[[ .Prefs.Testing ]]
+[[- end ]]
+
+[[- if ifdef .Prefs.ErrorHandling ]]
+
+### Error Handling
+
+[[ .Prefs.ErrorHandling ]]
+[[- end ]]
+
+[[- if ifdef .Prefs.Organization ]]
+
+### Code Organization
+
+[[ .Prefs.Organization ]]
+[[- end ]]
+
+[[- if ifdef .Prefs.Naming ]]
+
+### Naming Conventions
+
+[[ .Prefs.Naming ]]
+[[- end ]]
+
+[[- if ifdef .Prefs.Abstraction ]]
+
+### Abstraction & DRY
+
+[[ .Prefs.Abstraction ]]
+[[- end ]]
+
+[[- if ifdef .Prefs.Documentation ]]
+
+### Documentation
+
+[[ .Prefs.Documentation ]]
+[[- end ]]
+
+[[- if ifdef .Prefs.Dependencies ]]
+
+### Dependencies
+
+[[ .Prefs.Dependencies ]]
+[[- end ]]
+
+[[ end -]]

@@ -1,0 +1,27 @@
+[[- if .Project.Name -]]
+## Project Context
+
+- **Project:** [[ .Project.Name ]]
+- **Language:** [[ .Project.Language ]]
+[[- if .Project.Frameworks ]]
+- **Frameworks:** [[ join .Project.Frameworks ", " ]]
+[[- end ]]
+[[- if .Project.KeyConcerns ]]
+- **Key Concerns:** [[ join .Project.KeyConcerns ", " ]]
+[[- end ]]
+
+[[- if .Memory.ProjectBrief ]]
+
+### Project Brief
+
+[[ .Memory.ProjectBrief ]]
+[[- end ]]
+
+[[- if .Memory.TechContext ]]
+
+### Technical Context
+
+[[ .Memory.TechContext ]]
+[[- end ]]
+
+[[ end -]]

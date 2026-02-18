@@ -5,7 +5,7 @@ title: Multi-Agent Workflows
 
 # Multi-Agent Workflows
 
-Crux supports running multiple agents in parallel across separate tmux sessions. This guide covers how to configure and manage parallel execution safely.
+Crux can run multiple agents in parallel across separate tmux sessions. Here's how to set that up safely.
 
 ## Defining Multiple Agents
 

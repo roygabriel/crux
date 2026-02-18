@@ -52,7 +52,7 @@ Every coordination decision the orchestrator makes is recorded:
 
 ## Layer 3: Vector Index
 
-An embedded vector database (chromem-go) at `.crux/vectors/` enables semantic search:
+An embedded vector database (chromem-go) at `.crux/vectors/` powers semantic search:
 
 - Every decision record is embedded for semantic similarity search
 - Sub-millisecond retrieval for fewer than 50K records

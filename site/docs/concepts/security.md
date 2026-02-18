@@ -77,4 +77,4 @@ When an agent exceeds the limit, further commands are blocked until the window r
 
 ## Git Safety
 
-All agent commits land on feature branches (`crux/<agent-id>/<task>`). Merging to main requires human review. This ensures no agent can directly modify the main branch.
+All agent commits land on feature branches (`crux/<agent-id>/<task>`). Merging to main requires human review, so no agent can directly modify the main branch.

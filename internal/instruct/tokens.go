@@ -15,6 +15,8 @@ const (
 	BudgetCodex = 7500
 	// BudgetGemini is the default token budget for Gemini CLI instruction files.
 	BudgetGemini = 10000
+	// BudgetCopilot is the default token budget for Copilot CLI instruction files.
+	BudgetCopilot = 5000
 )
 
 // EstimateTokens provides a fast token estimate using the len/4 heuristic.

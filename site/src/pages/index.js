@@ -135,7 +135,7 @@ function FeaturesSection() {
             Everything You Need to Orchestrate AI Agents
           </Heading>
           <p className={styles.sectionSubtitle}>
-            Built for developers who want reliable, repeatable multi-agent workflows without the infrastructure overhead.
+            Reliable, repeatable multi-agent workflows without the infrastructure overhead.
           </p>
         </div>
         <div className={styles.featuresGrid}>

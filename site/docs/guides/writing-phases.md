@@ -78,7 +78,7 @@ Be explicit about which files are created, modified, or referenced:
 - internal/config/config.go
 ```
 
-This enables the engine to detect file conflicts between parallel phases.
+The engine uses these lists to detect file conflicts between parallel phases.
 
 ### Exit Criteria
 

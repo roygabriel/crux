@@ -112,7 +112,7 @@ crux audit list --since 1h
 
 **Fix**:
 
-1. Ensure only one `crux start` instance is running at a time.
+1. Make sure only one `crux start` instance is running at a time.
 2. If the issue persists after stopping all instances, the lock file may be stale:
    ```bash
    ls -la .crux/memory.db*
@@ -139,7 +139,7 @@ crux audit list --since 1h
      embedding_model: nomic-embed-text
    ```
 
-2. If using `ollama`, ensure the Ollama server is running and the model is pulled:
+2. If using `ollama`, make sure the Ollama server is running and the model is pulled:
    ```bash
    ollama list
    ollama pull nomic-embed-text

@@ -71,6 +71,15 @@ func (w *WorldState) UpdatePhase(phase types.PhaseID, name string) {
 	w.UpdatedAt = time.Now().UTC()
 }
 
+// RemoveAgent deletes an agent from the world state. It is safe for concurrent use.
+func (w *WorldState) RemoveAgent(id types.AgentID) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	delete(w.Agents, id)
+	w.UpdatedAt = time.Now().UTC()
+}
+
 // GetAgent returns the state for a specific agent. It is safe for concurrent use.
 func (w *WorldState) GetAgent(id types.AgentID) (AgentState, bool) {
 	w.mu.RLock()

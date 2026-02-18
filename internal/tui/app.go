@@ -26,6 +26,7 @@ var (
 type Model struct {
 	bridge      *StateBridge
 	logBridge   *LogBridge
+	commandBus  *CommandBus
 	state       StateUpdate
 	activePanel Panel
 	agentsPanel AgentsPanel
@@ -35,11 +36,13 @@ type Model struct {
 	ready       bool
 }
 
-// NewModel creates a new TUI model connected to the given state and log bridges.
-func NewModel(bridge *StateBridge, logBridge *LogBridge) Model {
+// NewModel creates a new TUI model connected to the given state, log, and
+// command bridges. The commandBus may be nil for read-only mode.
+func NewModel(bridge *StateBridge, logBridge *LogBridge, commandBus *CommandBus) Model {
 	return Model{
 		bridge:      bridge,
 		logBridge:   logBridge,
+		commandBus:  commandBus,
 		activePanel: PanelAgents,
 		agentsPanel: NewAgentsPanel(),
 		logsPanel:   NewLogsPanel(500),
@@ -56,7 +59,10 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
+		key := msg.String()
+
+		// Global keys: always handled regardless of panel or confirmation.
+		switch key {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "tab":
@@ -67,20 +73,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.agentsPanel.SetFocused(m.activePanel == PanelAgents)
 			m.logsPanel.SetFocused(m.activePanel == PanelLogs)
-		case "up", "k":
-			if m.activePanel == PanelLogs {
+			return m, nil
+		}
+
+		// Panel-specific keys.
+		if m.activePanel == PanelAgents {
+			handled, cmd := m.agentsPanel.HandleKey(key)
+			if handled {
+				if cmd != nil && m.commandBus != nil {
+					m.commandBus.Send(*cmd)
+				}
+				return m, nil
+			}
+		} else {
+			switch key {
+			case "up", "k":
 				m.logsPanel.ScrollUp(1)
-			}
-		case "down", "j":
-			if m.activePanel == PanelLogs {
+			case "down", "j":
 				m.logsPanel.ScrollDown(1)
-			}
-		case "pgup":
-			if m.activePanel == PanelLogs {
+			case "pgup":
 				m.logsPanel.ScrollUp(10)
-			}
-		case "pgdown":
-			if m.activePanel == PanelLogs {
+			case "pgdown":
 				m.logsPanel.ScrollDown(10)
 			}
 		}

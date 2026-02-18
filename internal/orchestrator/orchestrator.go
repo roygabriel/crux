@@ -47,6 +47,9 @@ type Orchestrator struct {
 	// security gates agent actions against their permission tier.
 	security SecurityGate
 
+	// preTickHook is called at the start of each tick before processing (e.g. command draining).
+	preTickHook func(ctx context.Context)
+
 	// tickHook is called at the end of each tick for external consumers (e.g. TUI).
 	tickHook func()
 
@@ -132,6 +135,12 @@ func (o *Orchestrator) SetTickHook(fn func()) {
 	o.tickHook = fn
 }
 
+// SetPreTickHook registers a function called at the start of each tick,
+// before agents are polled. Used to drain the TUI command bus.
+func (o *Orchestrator) SetPreTickHook(fn func(ctx context.Context)) {
+	o.preTickHook = fn
+}
+
 // WorldState returns the orchestrator's world state for external read access.
 func (o *Orchestrator) WorldState() *WorldState {
 	return o.worldState
@@ -204,6 +213,10 @@ func (o *Orchestrator) Stop(ctx context.Context) error {
 
 // tick runs one iteration of the control loop.
 func (o *Orchestrator) tick(ctx context.Context) error {
+	if o.preTickHook != nil {
+		o.preTickHook(ctx)
+	}
+
 	agents := o.registry.List()
 
 	for _, inst := range agents {

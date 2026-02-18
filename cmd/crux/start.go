@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -151,7 +152,7 @@ var startCmd = &cobra.Command{
 		defer stop()
 
 		if tuiFlag {
-			return runWithTUI(ctx, stop, orch, registry, rateLimiter, tracker, auditLogger)
+			return runWithTUI(ctx, stop, orch, registry, engine, messenger, rateLimiter, tracker, auditLogger, log)
 		}
 
 		// Headless mode.
@@ -174,12 +175,16 @@ func runWithTUI(
 	stop context.CancelFunc,
 	orch *orchestrator.Orchestrator,
 	registry *agent.Registry,
+	engine *phase.Engine,
+	messenger *agent.Messenger,
 	rateLimiter *security.RateLimiter,
 	tracker *phase.Tracker,
 	auditLogger *security.AuditLogger,
+	logger *slog.Logger,
 ) error {
 	bridge := tui.NewStateBridge(1)
 	logBridge := tui.NewLogBridge(64)
+	commandBus := tui.NewCommandBus(16, logger)
 	worldState := orch.WorldState()
 
 	// Route audit entries to the TUI log panel.
@@ -192,6 +197,70 @@ func runWithTUI(
 			entry.Allowed,
 			entry.Reason,
 		))
+	})
+
+	// Pre-tick hook: drain TUI commands and apply them to live components.
+	orch.SetPreTickHook(func(ctx context.Context) {
+		for {
+			select {
+			case cmd := <-commandBus.Receive():
+				switch cmd.Type {
+				case tui.CmdPauseAgent:
+					existing, _ := worldState.GetAgent(cmd.AgentID)
+					if err := registry.UpdateStatus(cmd.AgentID, types.StatusStopped); err != nil {
+						logger.Warn("pause command failed", "agent_id", cmd.AgentID, "error", err)
+					}
+					worldState.UpdateAgent(cmd.AgentID, orchestrator.AgentState{
+						Status:        types.StatusStopped,
+						PromptDisplay: existing.PromptDisplay,
+						Task:          existing.Task,
+						PhaseID:       existing.PhaseID,
+						AssignedAt:    existing.AssignedAt,
+						LastActive:    time.Now().UTC(),
+					})
+
+				case tui.CmdResumeAgent:
+					existing, _ := worldState.GetAgent(cmd.AgentID)
+					if err := registry.UpdateStatus(cmd.AgentID, types.StatusIdle); err != nil {
+						logger.Warn("resume command failed", "agent_id", cmd.AgentID, "error", err)
+					}
+					worldState.UpdateAgent(cmd.AgentID, orchestrator.AgentState{
+						Status:        types.StatusIdle,
+						PromptDisplay: existing.PromptDisplay,
+						Task:          existing.Task,
+						PhaseID:       existing.PhaseID,
+						AssignedAt:    existing.AssignedAt,
+						LastActive:    time.Now().UTC(),
+					})
+
+				case tui.CmdKillAgent:
+					if err := registry.Kill(ctx, cmd.AgentID); err != nil {
+						logger.Warn("kill command failed", "agent_id", cmd.AgentID, "error", err)
+					}
+					worldState.RemoveAgent(cmd.AgentID)
+
+				case tui.CmdForceAdvance:
+					if err := engine.ForceAdvance(ctx, cmd.PhaseID); err != nil {
+						logger.Warn("force advance failed", "phase_id", cmd.PhaseID, "error", err)
+					}
+
+				case tui.CmdSendMessage:
+					msg := types.Message{
+						From:      "operator",
+						To:        cmd.AgentID,
+						Type:      types.MessageTask,
+						Priority:  types.PriorityHigh,
+						Payload:   cmd.Text,
+						Timestamp: time.Now().UTC(),
+					}
+					if err := messenger.Send(ctx, cmd.AgentID, msg); err != nil {
+						logger.Warn("send message failed", "agent_id", cmd.AgentID, "error", err)
+					}
+				}
+			default:
+				return
+			}
+		}
 	})
 
 	// Set tick hook: builds a StateUpdate from live components and pushes it.
@@ -235,7 +304,7 @@ func runWithTUI(
 	}()
 
 	// Run TUI in foreground (blocks).
-	model := tui.NewModel(bridge, logBridge)
+	model := tui.NewModel(bridge, logBridge, commandBus)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		stop()

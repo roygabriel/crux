@@ -9,9 +9,12 @@ import (
 
 	"log/slog"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
+	"github.com/roygabriel/crux/internal/config"
 	"github.com/roygabriel/crux/internal/examples"
 	"github.com/roygabriel/crux/internal/instruct/prefs"
+	"github.com/roygabriel/crux/internal/planner"
 	"github.com/roygabriel/crux/internal/scaffold"
 	"github.com/roygabriel/crux/internal/wizard"
 	"github.com/spf13/cobra"
@@ -105,7 +108,13 @@ func runWizardInit(cfgPath string) error {
 	}
 
 	// Run preference questionnaire unless skipped.
-	if err := runPreferenceSetup(filepath.Dir(cfgPath)); err != nil {
+	cruxDir := filepath.Dir(cfgPath)
+	if err := runPreferenceSetup(cruxDir); err != nil {
+		return err
+	}
+
+	// Offer to launch planning agent for interactive phase design.
+	if err := offerPlanningAgent(cfgPath, cruxDir); err != nil {
 		return err
 	}
 
@@ -150,6 +159,68 @@ func runPreferenceSetup(cruxDir string) error {
 	}
 
 	fmt.Printf("\u2713 Created %s\n", filepath.Join(cruxDir, "preferences.yaml"))
+	return nil
+}
+
+// offerPlanningAgent checks for an API key and offers to launch the planning
+// agent for interactive phase design. Skips silently if no key is available.
+func offerPlanningAgent(cfgPath, cruxDir string) error {
+	apiKey := resolveAPIKey()
+	if apiKey == "" {
+		return nil
+	}
+
+	fmt.Print("\nDesign phases interactively with the planning agent? [Y/n] ")
+	var answer string
+	fmt.Scanln(&answer)
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer == "n" || answer == "no" {
+		fmt.Println("\u2022 Skipped planning agent")
+		return nil
+	}
+
+	log := setupLogger()
+
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return fmt.Errorf("load config for planner: %w", err)
+	}
+
+	projectRoot, err := filepath.Abs(cfg.Project.Root)
+	if err != nil {
+		return fmt.Errorf("resolve project root: %w", err)
+	}
+
+	projectCtx := planner.ProjectContext{
+		Name:     cfg.Project.Name,
+		RepoRoot: projectRoot,
+	}
+
+	store := prefs.NewStore(cruxDir, log)
+	var preferences *prefs.Preferences
+	if store.Exists() {
+		p, loadErr := store.Load()
+		if loadErr != nil {
+			log.Warn("failed to load preferences", "error", loadErr)
+		} else {
+			preferences = p
+		}
+	}
+
+	agent, err := planner.NewAgent(apiKey, "", projectCtx, preferences, log)
+	if err != nil {
+		return fmt.Errorf("create planning agent: %w", err)
+	}
+
+	planner.RegisterTools(agent, projectRoot)
+
+	model := planner.NewTUIModel(agent, projectRoot)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("planner tui: %w", err)
+	}
+
+	fmt.Println("\u2713 Planning session complete")
 	return nil
 }
 

@@ -337,6 +337,18 @@ func extractSection(content, heading string) string {
 	return strings.Join(sectionLines, "\n")
 }
 
+// ValidateSpecContent validates a phase spec markdown and returns a list of issues.
+// An empty slice means the content is valid.
+func ValidateSpecContent(content string) []string {
+	return validateSpec(content)
+}
+
+// ValidatePromptContent validates a prompt doc markdown and returns a list of issues.
+// An empty slice means the content is valid.
+func ValidatePromptContent(content string) []string {
+	return validatePromptDoc(content)
+}
+
 // --- generate_phase_docs tool ---
 
 type generatePhaseDocsTool struct {

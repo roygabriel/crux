@@ -54,6 +54,11 @@ type ToolResultMsg struct {
 	IsError bool
 }
 
+// initialSendMsg is dispatched by Init when an initial message is configured.
+type initialSendMsg struct {
+	text string
+}
+
 // TUIModel is the bubbletea model for the interactive planning conversation.
 type TUIModel struct {
 	agent       *Agent
@@ -63,6 +68,7 @@ type TUIModel struct {
 	streaming   bool
 	streamBuf   strings.Builder
 	phaseCount  int
+	initialMsg  string
 
 	viewport viewport.Model
 	input    textarea.Model
@@ -101,9 +107,22 @@ func NewTUIModel(agent *Agent, projectRoot string) TUIModel {
 	}
 }
 
+// SetInitialMessage configures a message to be sent automatically when the
+// TUI starts. This is used by --from-description to seed the conversation.
+func (m *TUIModel) SetInitialMessage(msg string) {
+	m.initialMsg = msg
+}
+
 // Init implements tea.Model.
 func (m TUIModel) Init() tea.Cmd {
-	return textarea.Blink
+	cmds := []tea.Cmd{textarea.Blink}
+	if m.initialMsg != "" {
+		text := m.initialMsg
+		cmds = append(cmds, func() tea.Msg {
+			return initialSendMsg{text: text}
+		})
+	}
+	return tea.Batch(cmds...)
 }
 
 // Update implements tea.Model.
@@ -164,6 +183,9 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ToolResultMsg:
 		cmds = append(cmds, m.handleToolResultCmd(msg))
+
+	case initialSendMsg:
+		return m, m.sendMessageCmd(msg.text)
 	}
 
 	// Update sub-models.

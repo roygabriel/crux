@@ -1,5 +1,7 @@
 # Crux
 
+> **Note:** This project is under active development and is not yet functional. APIs, commands, and configuration may change without notice.
+
 A single-binary Go orchestrator that coordinates AI coding agents across tmux sessions with persistent memory, phase-based workflow enforcement, and vector-searchable decision tracking.
 
 Crux manages Claude Code, Codex CLI, Gemini CLI, or any configurable CLI tool — assigning tasks from phase documents, enforcing verification gates between prompts, and maintaining a decision journal so the orchestrator never loses track of what agents are doing.

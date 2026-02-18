@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -68,8 +70,8 @@ func (r *Registry) Get(id types.AgentID) (*AgentInstance, error) {
 	return inst, nil
 }
 
-// List returns all registered agent instances. The returned slice is
-// always non-nil.
+// List returns all registered agent instances sorted by agent ID. The
+// returned slice is always non-nil.
 func (r *Registry) List() []*AgentInstance {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -78,6 +80,9 @@ func (r *Registry) List() []*AgentInstance {
 	for _, inst := range r.instances {
 		list = append(list, inst)
 	}
+	slices.SortFunc(list, func(a, b *AgentInstance) int {
+		return strings.Compare(string(a.Agent.ID), string(b.Agent.ID))
+	})
 	return list
 }
 

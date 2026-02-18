@@ -107,6 +107,47 @@ func TestSidebarPanel_SelectedAgent(t *testing.T) {
 	}
 }
 
+func TestSidebarPanel_SetAgents_PreservesSelectionAcrossReorder(t *testing.T) {
+	p := NewSidebarPanel()
+	p.SetAgents([]AgentSnapshot{
+		{ID: "a1"}, {ID: "a2"}, {ID: "a3"},
+	})
+	p.HandleKey("j") // select a2
+
+	// Reorder: a3, a1, a2.
+	p.SetAgents([]AgentSnapshot{
+		{ID: "a3"}, {ID: "a1"}, {ID: "a2"},
+	})
+
+	agent := p.SelectedAgent()
+	if agent == nil || agent.ID != "a2" {
+		t.Errorf("expected a2 after reorder, got %v", agent)
+	}
+}
+
+func TestSidebarPanel_SetAgents_SelectedAgentRemoved(t *testing.T) {
+	p := NewSidebarPanel()
+	p.SetAgents([]AgentSnapshot{
+		{ID: "a1"}, {ID: "a2"}, {ID: "a3"},
+	})
+	p.HandleKey("j")
+	p.HandleKey("j") // select a3 at index 2
+
+	// Remove a3, only a1 and a2 remain.
+	p.SetAgents([]AgentSnapshot{
+		{ID: "a1"}, {ID: "a2"},
+	})
+
+	agent := p.SelectedAgent()
+	if agent == nil {
+		t.Fatal("expected non-nil agent after removal")
+	}
+	// Cursor was 2, clamped to 1, which is a2.
+	if agent.ID != "a2" {
+		t.Errorf("expected a2 after selected agent removed, got %q", agent.ID)
+	}
+}
+
 func TestSidebarPanel_SetAgents_ClampsCursor(t *testing.T) {
 	p := NewSidebarPanel()
 	p.SetAgents([]AgentSnapshot{{ID: "a1"}, {ID: "a2"}, {ID: "a3"}})

@@ -294,6 +294,32 @@ func TestRegistryList(t *testing.T) {
 	}
 }
 
+func TestRegistryListSortedByID(t *testing.T) {
+	t.Parallel()
+
+	reg := newTestRegistry(successCommander("%1"))
+	ctx := context.Background()
+
+	// Spawn agents in non-alphabetical order.
+	for _, id := range []string{"charlie", "alpha", "bravo"} {
+		if err := reg.Spawn(ctx, validAgent(id)); err != nil {
+			t.Fatalf("Spawn %s: %v", id, err)
+		}
+	}
+
+	list := reg.List()
+	if len(list) != 3 {
+		t.Fatalf("List() returned %d items, want 3", len(list))
+	}
+
+	want := []types.AgentID{"alpha", "bravo", "charlie"}
+	for i, inst := range list {
+		if inst.Agent.ID != want[i] {
+			t.Errorf("List()[%d].Agent.ID = %q, want %q", i, inst.Agent.ID, want[i])
+		}
+	}
+}
+
 func TestRegistryKill(t *testing.T) {
 	t.Parallel()
 

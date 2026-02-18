@@ -15,6 +15,7 @@ type SidebarPanel struct {
 	width         int
 	height        int
 	cursor        int
+	selectedID    types.AgentID
 	confirming    bool
 	confirmAction Command
 	confirmPrompt string
@@ -25,14 +26,32 @@ func NewSidebarPanel() SidebarPanel {
 	return SidebarPanel{}
 }
 
-// SetAgents updates the agent list and clamps the cursor if the list shrank.
+// SetAgents updates the agent list, preserving the current selection by agent
+// ID across reorders. Falls back to clamping the cursor if the previously
+// selected agent was removed.
 func (p *SidebarPanel) SetAgents(agents []AgentSnapshot) {
 	p.agents = agents
 	if len(agents) == 0 {
 		p.cursor = 0
-	} else if p.cursor >= len(agents) {
+		p.selectedID = ""
+		return
+	}
+
+	// Try to preserve selection by agent ID.
+	if p.selectedID != "" {
+		for i, a := range agents {
+			if a.ID == p.selectedID {
+				p.cursor = i
+				return
+			}
+		}
+	}
+
+	// Agent not found (removed) or no prior selection — clamp cursor.
+	if p.cursor >= len(agents) {
 		p.cursor = len(agents) - 1
 	}
+	p.selectedID = agents[p.cursor].ID
 }
 
 // SetSize sets the panel rendering dimensions.
@@ -92,12 +111,14 @@ func (p *SidebarPanel) handleNormalKey(key string) (bool, *Command) {
 	case "j", "down":
 		if len(p.agents) > 0 && p.cursor < len(p.agents)-1 {
 			p.cursor++
+			p.selectedID = p.agents[p.cursor].ID
 		}
 		return true, nil
 
 	case "k", "up":
 		if p.cursor > 0 {
 			p.cursor--
+			p.selectedID = p.agents[p.cursor].ID
 		}
 		return true, nil
 

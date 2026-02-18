@@ -90,6 +90,14 @@ var startCmd = &cobra.Command{
 			return fmt.Errorf("create phase engine: %w", err)
 		}
 
+		// Load phases early so we can fail before spawning agents or starting the TUI.
+		if err := engine.LoadAll(); err != nil {
+			return fmt.Errorf("load phases: %w", err)
+		}
+		if len(engine.PhaseOrder()) == 0 {
+			return fmt.Errorf("no phase specifications found in %s\n\nRun 'crux plan' to generate phase specs, or add PHASE*.md files manually.", cfg.Phases.SpecDir)
+		}
+
 		// Phase completion handler.
 		notesDir := filepath.Join(cfg.Project.StateDir, "notes")
 		notesMgr := worknotes.NewManager(notesDir, log)

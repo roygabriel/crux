@@ -145,22 +145,22 @@ function ArchitectureSection() {
   const layers = [
     {
       label: 'Orchestrator Loop',
-      color: '#4F46E5',
+      color: '#D97706',
       components: ['World State', 'Agent Assignment', 'Decision RAG', 'Gates'],
     },
     {
       label: 'Core Engines',
-      color: '#6366F1',
+      color: '#B45309',
       components: ['Phase Engine', 'Memory System', 'Agent Manager', 'Security Layer'],
     },
     {
       label: 'Plugin Layer',
-      color: '#818CF8',
+      color: '#F59E0B',
       components: ['Claude Code', 'Codex CLI', 'Gemini CLI', 'Generic Adapter'],
     },
     {
       label: 'Transport',
-      color: '#06B6D4',
+      color: '#0D9488',
       components: ['tmux Sessions', 'Panes', 'capture-pane', 'send-keys'],
     },
   ];

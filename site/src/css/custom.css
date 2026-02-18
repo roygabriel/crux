@@ -1,19 +1,19 @@
 /**
  * Crux Documentation — Custom Theme
- * Indigo/cyan palette with modern typography
+ * Amber/teal palette with warm stone backgrounds
  */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* ─── Light Mode ─── */
 :root {
-  --ifm-color-primary: #4F46E5;
-  --ifm-color-primary-dark: #4338CA;
-  --ifm-color-primary-darker: #3730A3;
-  --ifm-color-primary-darkest: #312E81;
-  --ifm-color-primary-light: #6366F1;
-  --ifm-color-primary-lighter: #818CF8;
-  --ifm-color-primary-lightest: #A5B4FC;
+  --ifm-color-primary: #D97706;
+  --ifm-color-primary-dark: #B45309;
+  --ifm-color-primary-darker: #92400E;
+  --ifm-color-primary-darkest: #78350F;
+  --ifm-color-primary-light: #F59E0B;
+  --ifm-color-primary-lighter: #FBBF24;
+  --ifm-color-primary-lightest: #FDE68A;
 
   --ifm-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
@@ -24,34 +24,34 @@
   --ifm-global-radius: 8px;
   --ifm-navbar-height: 64px;
 
-  --docusaurus-highlighted-code-line-bg: rgba(79, 70, 229, 0.1);
+  --docusaurus-highlighted-code-line-bg: rgba(217, 119, 6, 0.1);
 
-  --crux-accent: #06B6D4;
-  --crux-gradient-start: #4F46E5;
-  --crux-gradient-end: #06B6D4;
-  --crux-surface: #F8FAFC;
+  --crux-accent: #0D9488;
+  --crux-gradient-start: #D97706;
+  --crux-gradient-end: #0D9488;
+  --crux-surface: #FAFAF9;
   --crux-surface-raised: #FFFFFF;
-  --crux-text-muted: #64748B;
+  --crux-text-muted: #78716C;
 }
 
 /* ─── Dark Mode ─── */
 [data-theme='dark'] {
-  --ifm-color-primary: #818CF8;
-  --ifm-color-primary-dark: #6366F1;
-  --ifm-color-primary-darker: #4F46E5;
-  --ifm-color-primary-darkest: #4338CA;
-  --ifm-color-primary-light: #A5B4FC;
-  --ifm-color-primary-lighter: #C7D2FE;
-  --ifm-color-primary-lightest: #E0E7FF;
+  --ifm-color-primary: #FBBF24;
+  --ifm-color-primary-dark: #F59E0B;
+  --ifm-color-primary-darker: #D97706;
+  --ifm-color-primary-darkest: #B45309;
+  --ifm-color-primary-light: #FDE68A;
+  --ifm-color-primary-lighter: #FEF3C7;
+  --ifm-color-primary-lightest: #FFFBEB;
 
-  --docusaurus-highlighted-code-line-bg: rgba(129, 140, 248, 0.15);
+  --docusaurus-highlighted-code-line-bg: rgba(251, 191, 36, 0.15);
 
-  --crux-accent: #22D3EE;
-  --crux-gradient-start: #818CF8;
-  --crux-gradient-end: #22D3EE;
-  --crux-surface: #0F172A;
-  --crux-surface-raised: #1E293B;
-  --crux-text-muted: #94A3B8;
+  --crux-accent: #2DD4BF;
+  --crux-gradient-start: #FBBF24;
+  --crux-gradient-end: #2DD4BF;
+  --crux-surface: #1C1917;
+  --crux-surface-raised: #292524;
+  --crux-text-muted: #A8A29E;
 }
 
 /* ─── Global Styles ─── */
@@ -59,7 +59,12 @@ html {
   scroll-behavior: smooth;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   letter-spacing: -0.02em;
 }
 
@@ -69,7 +74,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 [data-theme='dark'] .navbar {
-  background: rgba(15, 23, 42, 0.85);
+  background: rgba(28, 25, 23, 0.85);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
@@ -107,7 +112,7 @@ code {
 }
 
 .menu__link:hover {
-  background: rgba(79, 70, 229, 0.08);
+  background: rgba(217, 119, 6, 0.08);
 }
 
 .menu__link--active {
@@ -121,7 +126,7 @@ code {
 }
 
 [data-theme='dark'] .footer {
-  background: #0B1120 !important;
+  background: #0C0A09 !important;
 }
 
 .footer__title {
@@ -138,7 +143,7 @@ table {
 }
 
 th {
-  background: rgba(79, 70, 229, 0.06);
+  background: rgba(217, 119, 6, 0.06);
   font-weight: 600;
   font-size: 0.85rem;
   text-transform: uppercase;
@@ -146,7 +151,7 @@ th {
 }
 
 [data-theme='dark'] th {
-  background: rgba(129, 140, 248, 0.1);
+  background: rgba(251, 191, 36, 0.1);
 }
 
 /* ─── Admonitions ─── */
@@ -160,14 +165,14 @@ th {
 }
 
 [data-theme='dark'] ::-webkit-scrollbar-track {
-  background: #0F172A;
+  background: #1C1917;
 }
 
 [data-theme='dark'] ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #44403C;
   border-radius: 4px;
 }
 
 [data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #57534E;
 }

@@ -7,8 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"log/slog"
+
 	"github.com/mattn/go-isatty"
 	"github.com/roygabriel/crux/internal/examples"
+	"github.com/roygabriel/crux/internal/instruct/prefs"
 	"github.com/roygabriel/crux/internal/scaffold"
 	"github.com/roygabriel/crux/internal/wizard"
 	"github.com/spf13/cobra"
@@ -16,9 +19,10 @@ import (
 )
 
 var (
-	forceFlag       bool
-	exampleFlag     string
-	noInteractive   bool
+	forceFlag     bool
+	exampleFlag   string
+	noInteractive bool
+	noPrefs       bool
 )
 
 // knownExamples maps example names to their embedded FS loader functions.
@@ -37,6 +41,7 @@ func init() {
 	initCmd.Flags().BoolVar(&forceFlag, "force", false, "Overwrite template files (never overwrites config)")
 	initCmd.Flags().StringVar(&exampleFlag, "example", "", "Seed project with a named example (e.g. httpapi)")
 	initCmd.Flags().BoolVarP(&noInteractive, "no-interactive", "y", false, "Skip interactive wizard, use defaults")
+	initCmd.Flags().BoolVar(&noPrefs, "no-prefs", false, "Skip preference questionnaire")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -99,11 +104,52 @@ func runWizardInit(cfgPath string) error {
 		return err
 	}
 
+	// Run preference questionnaire unless skipped.
+	if err := runPreferenceSetup(filepath.Dir(cfgPath)); err != nil {
+		return err
+	}
+
 	// Seed example if requested by the wizard.
 	if result.SeedExample {
 		return seedExample(cfgPath, "httpapi")
 	}
 
+	return nil
+}
+
+// runPreferenceSetup runs the preference questionnaire during init.
+// Skipped if --no-prefs is set or preferences.yaml already exists (unless --force).
+func runPreferenceSetup(cruxDir string) error {
+	if noPrefs {
+		fmt.Println("\u2022 Skipped preferences (--no-prefs)")
+		return nil
+	}
+
+	store := prefs.NewStore(cruxDir, slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	})))
+
+	if store.Exists() && !forceFlag {
+		fmt.Println("\u2022 Skipped preferences (already exists)")
+		return nil
+	}
+
+	q := prefs.NewQuestionnaire(nil)
+	if err := q.Run(); err != nil {
+		return fmt.Errorf("preferences: %w", err)
+	}
+
+	result := q.Result()
+	if result == nil {
+		fmt.Println("\u2022 Skipped preferences (cancelled)")
+		return nil
+	}
+
+	if err := store.Save(result); err != nil {
+		return fmt.Errorf("save preferences: %w", err)
+	}
+
+	fmt.Printf("\u2713 Created %s\n", filepath.Join(cruxDir, "preferences.yaml"))
 	return nil
 }
 

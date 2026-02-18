@@ -37,14 +37,6 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return runPlanValidation()
 	}
 
-	// Resolve API key.
-	apiKey := resolveAPIKey()
-	if apiKey == "" {
-		fmt.Println("No Anthropic API key found.")
-		fmt.Println("Set CRUX_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY to use the planning agent.")
-		return nil
-	}
-
 	// Load config.
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
@@ -76,10 +68,18 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Initialize agent.
+	// Initialize agent. CLI backends use their own auth; only the SDK
+	// backend needs an Anthropic API key.
 	var agent *planner.Agent
 	switch cfg.Planner.Agent {
 	case "", "sdk":
+		apiKey := resolveAPIKey()
+		if apiKey == "" {
+			fmt.Println("No Anthropic API key found.")
+			fmt.Println("Set CRUX_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY, or use a CLI backend:")
+			fmt.Println("  CRUX_PLANNER_AGENT=claude crux plan")
+			return nil
+		}
 		a, agentErr := planner.NewAgent(apiKey, "", projectCtx, preferences, log, cfg.Planner.MaxTokens)
 		if agentErr != nil {
 			return fmt.Errorf("create planning agent: %w", agentErr)

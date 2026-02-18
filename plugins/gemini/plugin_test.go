@@ -25,52 +25,53 @@ func TestLaunchCmd(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		cfg       plugin.AgentConfig
-		wantBin   string
-		wantErr   bool
-		checkFlag string
-		noFlag    string // flag that must NOT appear
+		name       string
+		cfg        plugin.AgentConfig
+		wantBin    string
+		wantErr    bool
+		checkFlags []string
+		noFlag     string // flag that must NOT appear
 	}{
 		{
-			name: "readonly-no-sandbox-flag",
+			name: "readonly-approval-mode-plan",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-1",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermReadonly,
 			},
-			wantBin: "gemini",
-			noFlag:  "--sandbox",
+			wantBin:    "gemini",
+			checkFlags: []string{"--approval-mode", "plan"},
 		},
 		{
-			name: "standard-no-sandbox-flag",
+			name: "standard-approval-mode-default",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-2",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermStandard,
 			},
-			wantBin: "gemini",
-			noFlag:  "--sandbox",
+			wantBin:    "gemini",
+			checkFlags: []string{"--approval-mode", "default"},
 		},
 		{
-			name: "elevated-sandbox-none",
+			name: "elevated-approval-mode-auto-edit",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-3",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermElevated,
 			},
-			wantBin:   "gemini",
-			checkFlag: "none",
+			wantBin:    "gemini",
+			checkFlags: []string{"--approval-mode", "auto_edit"},
 		},
 		{
-			name: "autonomous-sandbox-none",
+			name: "autonomous-yolo",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-4",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermAutonomous,
 			},
-			wantBin:   "gemini",
-			checkFlag: "--sandbox",
+			wantBin:    "gemini",
+			checkFlags: []string{"--yolo"},
+			noFlag:     "--sandbox",
 		},
 		{
 			name: "empty-workdir",
@@ -89,8 +90,8 @@ func TestLaunchCmd(t *testing.T) {
 				Permission: types.PermStandard,
 				ExtraArgs:  []string{"--verbose"},
 			},
-			wantBin:   "gemini",
-			checkFlag: "--verbose",
+			wantBin:    "gemini",
+			checkFlags: []string{"--verbose"},
 		},
 	}
 
@@ -111,8 +112,10 @@ func TestLaunchCmd(t *testing.T) {
 			if bin != tt.wantBin {
 				t.Errorf("bin = %q, want %q", bin, tt.wantBin)
 			}
-			if tt.checkFlag != "" && !containsStr(args, tt.checkFlag) {
-				t.Errorf("args %v missing expected flag %q", args, tt.checkFlag)
+			for _, flag := range tt.checkFlags {
+				if !containsStr(args, flag) {
+					t.Errorf("args %v missing expected flag %q", args, flag)
+				}
 			}
 			if tt.noFlag != "" && containsStr(args, tt.noFlag) {
 				t.Errorf("args %v should not contain flag %q", args, tt.noFlag)

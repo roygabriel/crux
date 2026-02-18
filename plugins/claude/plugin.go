@@ -36,17 +36,25 @@ func New() *Plugin {
 func (p *Plugin) Name() string { return pluginName }
 
 // LaunchCmd returns the command to start Claude Code with appropriate flags
-// based on the agent configuration. When Permission is autonomous, the
-// --dangerously-skip-permissions flag is included.
+// based on the agent configuration. Permission tiers map to --permission-mode
+// values; autonomous also includes --dangerously-skip-permissions.
 func (p *Plugin) LaunchCmd(cfg plugin.AgentConfig) (string, []string, error) {
 	if cfg.WorkDir == "" {
 		return "", nil, fmt.Errorf("launch claude: work directory must not be empty")
 	}
 
-	args := []string{"--output-format", "json"}
+	var args []string
 
-	if cfg.Permission == types.PermAutonomous {
-		args = append(args, "--dangerously-skip-permissions")
+	switch cfg.Permission {
+	case types.PermReadonly:
+		args = append(args, "--permission-mode", "plan")
+	case types.PermStandard:
+		args = append(args, "--permission-mode", "default")
+	case types.PermElevated:
+		args = append(args, "--permission-mode", "acceptEdits")
+	case types.PermAutonomous:
+		args = append(args, "--permission-mode", "bypassPermissions",
+			"--dangerously-skip-permissions")
 	}
 
 	args = append(args, cfg.ExtraArgs...)

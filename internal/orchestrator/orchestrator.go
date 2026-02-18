@@ -249,9 +249,17 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	conflictCh := o.conflicts.MonitorRuntime(ctx)
 	go func() {
 		for event := range conflictCh {
-			if err := o.conflicts.HandleConflict(ctx, event); err != nil {
-				o.logger.Error("conflict handling failed", "error", err)
-			}
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						o.logger.Error("panic in conflict handler",
+							"recover", r)
+					}
+				}()
+				if err := o.conflicts.HandleConflict(ctx, event); err != nil {
+					o.logger.Error("conflict handling failed", "error", err)
+				}
+			}()
 		}
 	}()
 

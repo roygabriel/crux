@@ -140,7 +140,7 @@ const config = {
             position: 'left',
           },
           {
-            href: 'https://github.com/users/roygabriel/projects/2',
+            to: '/roadmap',
             label: 'Roadmap',
             position: 'left',
           },

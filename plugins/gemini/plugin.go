@@ -30,8 +30,8 @@ func New() *Plugin {
 func (p *Plugin) Name() string { return pluginName }
 
 // LaunchCmd returns the command to start Gemini CLI with appropriate flags
-// based on the agent configuration. Elevated and autonomous permissions
-// disable sandboxing via --sandbox none.
+// based on the agent configuration. Permission tiers map to --approval-mode
+// values; autonomous uses --yolo.
 func (p *Plugin) LaunchCmd(cfg plugin.AgentConfig) (string, []string, error) {
 	if cfg.WorkDir == "" {
 		return "", nil, fmt.Errorf("launch gemini: work directory must not be empty")
@@ -40,8 +40,14 @@ func (p *Plugin) LaunchCmd(cfg plugin.AgentConfig) (string, []string, error) {
 	var args []string
 
 	switch cfg.Permission {
-	case types.PermElevated, types.PermAutonomous:
-		args = append(args, "--sandbox", "none")
+	case types.PermReadonly:
+		args = append(args, "--approval-mode", "plan")
+	case types.PermStandard:
+		args = append(args, "--approval-mode", "default")
+	case types.PermElevated:
+		args = append(args, "--approval-mode", "auto_edit")
+	case types.PermAutonomous:
+		args = append(args, "--yolo")
 	}
 
 	args = append(args, cfg.ExtraArgs...)

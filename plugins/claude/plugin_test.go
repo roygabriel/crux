@@ -26,35 +26,57 @@ func TestLaunchCmd(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		cfg       plugin.AgentConfig
-		wantBin   string
-		wantErr   bool
-		checkFlag string // flag that must appear in args
+		name       string
+		cfg        plugin.AgentConfig
+		wantBin    string
+		wantErr    bool
+		checkFlags []string // flags that must appear in args
+		noFlag     string   // flag that must NOT appear
 	}{
 		{
-			name: "standard-permission",
+			name: "readonly-permission-mode-plan",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-1",
 				WorkDir:    "/tmp/project",
-				Permission: types.PermStandard,
+				Permission: types.PermReadonly,
 			},
-			wantBin: "claude",
+			wantBin:    "claude",
+			checkFlags: []string{"--permission-mode", "plan"},
 		},
 		{
-			name: "autonomous-adds-skip-permissions",
+			name: "standard-permission-mode-default",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-2",
 				WorkDir:    "/tmp/project",
+				Permission: types.PermStandard,
+			},
+			wantBin:    "claude",
+			checkFlags: []string{"--permission-mode", "default"},
+		},
+		{
+			name: "elevated-permission-mode-acceptEdits",
+			cfg: plugin.AgentConfig{
+				ID:         "agent-3",
+				WorkDir:    "/tmp/project",
+				Permission: types.PermElevated,
+			},
+			wantBin:    "claude",
+			checkFlags: []string{"--permission-mode", "acceptEdits"},
+		},
+		{
+			name: "autonomous-includes-bypass-and-skip",
+			cfg: plugin.AgentConfig{
+				ID:         "agent-4",
+				WorkDir:    "/tmp/project",
 				Permission: types.PermAutonomous,
 			},
-			wantBin:   "claude",
-			checkFlag: "--dangerously-skip-permissions",
+			wantBin:    "claude",
+			checkFlags: []string{"--permission-mode", "bypassPermissions", "--dangerously-skip-permissions"},
 		},
 		{
 			name: "empty-workdir",
 			cfg: plugin.AgentConfig{
-				ID:         "agent-3",
+				ID:         "agent-5",
 				WorkDir:    "",
 				Permission: types.PermStandard,
 			},
@@ -63,23 +85,23 @@ func TestLaunchCmd(t *testing.T) {
 		{
 			name: "extra-args-appended",
 			cfg: plugin.AgentConfig{
-				ID:         "agent-4",
+				ID:         "agent-6",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermStandard,
 				ExtraArgs:  []string{"--verbose"},
 			},
-			wantBin:   "claude",
-			checkFlag: "--verbose",
+			wantBin:    "claude",
+			checkFlags: []string{"--verbose"},
 		},
 		{
-			name: "output-format-json-present",
+			name: "no-output-format-flag",
 			cfg: plugin.AgentConfig{
-				ID:         "agent-5",
+				ID:         "agent-7",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermStandard,
 			},
-			wantBin:   "claude",
-			checkFlag: "--output-format",
+			wantBin: "claude",
+			noFlag:  "--output-format",
 		},
 	}
 
@@ -100,8 +122,13 @@ func TestLaunchCmd(t *testing.T) {
 			if bin != tt.wantBin {
 				t.Errorf("bin = %q, want %q", bin, tt.wantBin)
 			}
-			if tt.checkFlag != "" && !containsStr(args, tt.checkFlag) {
-				t.Errorf("args %v missing expected flag %q", args, tt.checkFlag)
+			for _, flag := range tt.checkFlags {
+				if !containsStr(args, flag) {
+					t.Errorf("args %v missing expected flag %q", args, flag)
+				}
+			}
+			if tt.noFlag != "" && containsStr(args, tt.noFlag) {
+				t.Errorf("args %v should not contain flag %q", args, tt.noFlag)
 			}
 		})
 	}

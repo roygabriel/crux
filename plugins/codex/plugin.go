@@ -30,7 +30,8 @@ func New() *Plugin {
 func (p *Plugin) Name() string { return pluginName }
 
 // LaunchCmd returns the command to start Codex CLI with appropriate flags
-// based on the agent configuration. Permission tiers map to approval modes.
+// based on the agent configuration. Permission tiers map to --ask-for-approval
+// values; autonomous uses --full-auto.
 func (p *Plugin) LaunchCmd(cfg plugin.AgentConfig) (string, []string, error) {
 	if cfg.WorkDir == "" {
 		return "", nil, fmt.Errorf("launch codex: work directory must not be empty")
@@ -40,11 +41,12 @@ func (p *Plugin) LaunchCmd(cfg plugin.AgentConfig) (string, []string, error) {
 
 	switch cfg.Permission {
 	case types.PermReadonly, types.PermStandard:
-		args = append(args, "--approval-mode", "suggest")
+		args = append(args, "--ask-for-approval", "untrusted")
 	case types.PermElevated:
-		args = append(args, "--approval-mode", "auto-edit")
+		args = append(args, "--ask-for-approval", "on-request",
+			"--sandbox", "workspace-write")
 	case types.PermAutonomous:
-		args = append(args, "--approval-mode", "full-auto")
+		args = append(args, "--full-auto")
 	}
 
 	args = append(args, cfg.ExtraArgs...)

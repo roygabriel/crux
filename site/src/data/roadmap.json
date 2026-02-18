@@ -1,0 +1,88 @@
+{
+    "lastUpdated": "2026-02-18T00:00:00Z",
+    "quarters": [
+        {
+            "label": "Q1 2026",
+            "items": [
+                {
+                    "title": "Core Orchestration Engine",
+                    "status": "Done",
+                    "description": "Phase-based multi-agent workflow engine with tmux session management, verification gates, and conflict resolution.",
+                    "labels": [
+                        "core"
+                    ],
+                    "url": ""
+                },
+                {
+                    "title": "Memory System",
+                    "status": "Done",
+                    "description": "Three-layer memory: markdown memory bank, SQLite with FTS5, and vector search via chromem-go.",
+                    "labels": [
+                        "core"
+                    ],
+                    "url": ""
+                },
+                {
+                    "title": "Plugin Architecture",
+                    "status": "In Progress",
+                    "description": "Extensible plugin SDK supporting Claude Code, Codex CLI, Gemini CLI, and custom tool integrations.",
+                    "labels": [
+                        "enhancement"
+                    ],
+                    "url": ""
+                }
+            ]
+        },
+        {
+            "label": "Q2 2026",
+            "items": [
+                {
+                    "title": "Web Dashboard",
+                    "status": "Todo",
+                    "description": "Real-time web UI for monitoring agent sessions, viewing logs, and managing workflows.",
+                    "labels": [
+                        "enhancement"
+                    ],
+                    "url": ""
+                },
+                {
+                    "title": "MCP Server Integration",
+                    "status": "Todo",
+                    "description": "First-class Model Context Protocol support for tool discovery and agent communication.",
+                    "labels": [
+                        "enhancement"
+                    ],
+                    "url": ""
+                }
+            ]
+        },
+        {
+            "label": "Q3 2026",
+            "items": [
+                {
+                    "title": "Cost & Token Tracking",
+                    "status": "Todo",
+                    "description": "Per-agent and per-session cost tracking with budget limits and usage analytics.",
+                    "labels": [
+                        "enhancement"
+                    ],
+                    "url": ""
+                }
+            ]
+        },
+        {
+            "label": "Q4 2026",
+            "items": [
+                {
+                    "title": "Enterprise Features",
+                    "status": "Todo",
+                    "description": "Team workspaces, RBAC, audit logs, and SSO integration for enterprise deployments.",
+                    "labels": [
+                        "enhancement"
+                    ],
+                    "url": ""
+                }
+            ]
+        }
+    ]
+}

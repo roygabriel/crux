@@ -25,51 +25,52 @@ func TestLaunchCmd(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		cfg       plugin.AgentConfig
-		wantBin   string
-		wantErr   bool
-		checkFlag string
+		name       string
+		cfg        plugin.AgentConfig
+		wantBin    string
+		wantErr    bool
+		checkFlags []string
+		noFlag     string
 	}{
 		{
-			name: "readonly-suggest-mode",
+			name: "readonly-untrusted-approval",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-1",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermReadonly,
 			},
-			wantBin:   "codex",
-			checkFlag: "suggest",
+			wantBin:    "codex",
+			checkFlags: []string{"--ask-for-approval", "untrusted"},
 		},
 		{
-			name: "standard-suggest-mode",
+			name: "standard-untrusted-approval",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-2",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermStandard,
 			},
-			wantBin:   "codex",
-			checkFlag: "suggest",
+			wantBin:    "codex",
+			checkFlags: []string{"--ask-for-approval", "untrusted"},
 		},
 		{
-			name: "elevated-auto-edit-mode",
+			name: "elevated-on-request-with-sandbox",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-3",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermElevated,
 			},
-			wantBin:   "codex",
-			checkFlag: "auto-edit",
+			wantBin:    "codex",
+			checkFlags: []string{"--ask-for-approval", "on-request", "--sandbox", "workspace-write"},
 		},
 		{
-			name: "autonomous-full-auto-mode",
+			name: "autonomous-full-auto",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-4",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermAutonomous,
 			},
-			wantBin:   "codex",
-			checkFlag: "full-auto",
+			wantBin:    "codex",
+			checkFlags: []string{"--full-auto"},
 		},
 		{
 			name: "empty-workdir",
@@ -88,18 +89,18 @@ func TestLaunchCmd(t *testing.T) {
 				Permission: types.PermStandard,
 				ExtraArgs:  []string{"--verbose"},
 			},
-			wantBin:   "codex",
-			checkFlag: "--verbose",
+			wantBin:    "codex",
+			checkFlags: []string{"--verbose"},
 		},
 		{
-			name: "approval-mode-flag-present",
+			name: "no-approval-mode-flag",
 			cfg: plugin.AgentConfig{
 				ID:         "agent-7",
 				WorkDir:    "/tmp/project",
 				Permission: types.PermStandard,
 			},
-			wantBin:   "codex",
-			checkFlag: "--approval-mode",
+			wantBin: "codex",
+			noFlag:  "--approval-mode",
 		},
 	}
 
@@ -120,8 +121,13 @@ func TestLaunchCmd(t *testing.T) {
 			if bin != tt.wantBin {
 				t.Errorf("bin = %q, want %q", bin, tt.wantBin)
 			}
-			if tt.checkFlag != "" && !containsStr(args, tt.checkFlag) {
-				t.Errorf("args %v missing expected flag %q", args, tt.checkFlag)
+			for _, flag := range tt.checkFlags {
+				if !containsStr(args, flag) {
+					t.Errorf("args %v missing expected flag %q", args, flag)
+				}
+			}
+			if tt.noFlag != "" && containsStr(args, tt.noFlag) {
+				t.Errorf("args %v should not contain flag %q", args, tt.noFlag)
 			}
 		})
 	}

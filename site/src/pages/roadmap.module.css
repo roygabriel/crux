@@ -1,0 +1,468 @@
+/* ═══════════════════════════════════════════
+   Roadmap Timeline Page
+   ═══════════════════════════════════════════ */
+
+.roadmapPage {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 4rem;
+}
+
+/* ─── Hero ─── */
+.heroSection {
+    text-align: center;
+    margin-bottom: 3rem;
+    padding: 2rem 0;
+}
+
+.pageTitle {
+    font-size: 2.8rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.5rem;
+}
+
+.titleAccent {
+    background: linear-gradient(135deg, var(--crux-gradient-start), var(--crux-gradient-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.pageSubtitle {
+    font-size: 1.15rem;
+    color: var(--crux-text-muted);
+    max-width: 600px;
+    margin: 0 auto 1.5rem;
+}
+
+.legend {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.legendItem {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+}
+
+/* ─── Timeline ─── */
+.timelineContainer {
+    position: relative;
+    padding-top: 2rem;
+}
+
+.timelineLine {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--crux-gradient-start), var(--crux-gradient-end));
+    border-radius: 2px;
+}
+
+.timelineQuarters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+/* ─── Quarter Column ─── */
+.quarterColumn {
+    position: relative;
+    padding-top: 1.5rem;
+}
+
+.quarterColumn::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--crux-gradient-start);
+    border: 3px solid var(--ifm-background-color);
+    box-shadow: 0 0 0 2px var(--crux-gradient-start);
+    z-index: 1;
+}
+
+.quarterHeader {
+    text-align: center;
+    margin-bottom: 1.25rem;
+}
+
+.quarterLabel {
+    display: inline-block;
+    font-size: 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.35rem 1.2rem;
+    border-radius: 20px;
+    background: linear-gradient(135deg, var(--crux-gradient-start), var(--crux-gradient-end));
+    color: #fff;
+    margin-bottom: 0.5rem;
+}
+
+.quarterProgress {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.progressBar {
+    width: 80px;
+    height: 6px;
+    background: var(--crux-surface);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+[data-theme='dark'] .progressBar {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.progressFill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--crux-gradient-start), var(--crux-gradient-end));
+    border-radius: 3px;
+    transition: width 0.6s ease;
+}
+
+.progressText {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--crux-text-muted);
+}
+
+/* ─── Quarter Items ─── */
+.quarterItems {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* ─── Item Card ─── */
+.itemCard {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 1rem 1.25rem;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    background: var(--crux-surface-raised);
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+}
+
+.itemCard:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    border-color: var(--crux-gradient-start);
+}
+
+[data-theme='dark'] .itemCard {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme='dark'] .itemCard:hover {
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    border-color: var(--crux-gradient-start);
+}
+
+/* Status-specific card left border */
+.statusDoneCard {
+    border-left: 3px solid #0D9488;
+}
+
+.statusInProgressCard {
+    border-left: 3px solid #D97706;
+}
+
+.statusTodoCard {
+    border-left: 3px solid #9CA3AF;
+}
+
+[data-theme='dark'] .statusDoneCard {
+    border-left-color: #2DD4BF;
+}
+
+[data-theme='dark'] .statusInProgressCard {
+    border-left-color: #FBBF24;
+}
+
+.itemHeader {
+    margin-bottom: 0.5rem;
+}
+
+.itemTitle {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0;
+    line-height: 1.3;
+}
+
+.itemLabels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.5rem;
+}
+
+/* ─── Status Badge ─── */
+.statusBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.6rem;
+    border-radius: 12px;
+}
+
+.statusIcon {
+    font-size: 0.65rem;
+}
+
+.statusDone {
+    background: rgba(13, 148, 136, 0.12);
+    color: #0D9488;
+}
+
+.statusInProgress {
+    background: rgba(217, 119, 6, 0.12);
+    color: #D97706;
+}
+
+.statusTodo {
+    background: rgba(107, 114, 128, 0.12);
+    color: #6B7280;
+}
+
+[data-theme='dark'] .statusDone {
+    background: rgba(45, 212, 191, 0.15);
+    color: #2DD4BF;
+}
+
+[data-theme='dark'] .statusInProgress {
+    background: rgba(251, 191, 36, 0.15);
+    color: #FBBF24;
+}
+
+[data-theme='dark'] .statusTodo {
+    background: rgba(156, 163, 175, 0.15);
+    color: #9CA3AF;
+}
+
+/* ─── Label Badge ─── */
+.labelBadge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.1rem 0.5rem;
+    border-radius: 10px;
+    background: rgba(13, 148, 136, 0.08);
+    color: var(--crux-accent);
+    border: 1px solid rgba(13, 148, 136, 0.15);
+}
+
+[data-theme='dark'] .labelBadge {
+    background: rgba(45, 212, 191, 0.1);
+    border-color: rgba(45, 212, 191, 0.2);
+}
+
+/* ─── Modal ─── */
+.modalOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1.5rem;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.modalContent {
+    background: var(--ifm-background-color);
+    border-radius: 16px;
+    padding: 2rem;
+    max-width: 560px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    position: relative;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
+    animation: slideUp 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+[data-theme='dark'] .modalContent {
+    background: #1C1917;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modalClose {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    color: var(--crux-text-muted);
+    transition: all 0.15s;
+}
+
+.modalClose:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: inherit;
+}
+
+[data-theme='dark'] .modalClose {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme='dark'] .modalClose:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.modalTitle {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 0 0.75rem;
+    padding-right: 2rem;
+}
+
+.modalMeta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1.25rem;
+}
+
+.modalDescription {
+    padding: 1rem;
+    background: var(--crux-surface);
+    border-radius: 10px;
+    margin-bottom: 1.25rem;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--crux-text-muted);
+}
+
+[data-theme='dark'] .modalDescription {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.modalDescription p {
+    margin: 0;
+}
+
+.modalLink {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--ifm-color-primary);
+    text-decoration: none;
+    transition: opacity 0.15s;
+}
+
+.modalLink:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+}
+
+/* ─── Footer ─── */
+.roadmapFooter {
+    text-align: center;
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    font-size: 0.85rem;
+    color: var(--crux-text-muted);
+}
+
+[data-theme='dark'] .roadmapFooter {
+    border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.roadmapFooter a {
+    color: var(--ifm-color-primary);
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 768px) {
+    .pageTitle {
+        font-size: 2rem;
+    }
+
+    .timelineQuarters {
+        grid-template-columns: 1fr;
+    }
+
+    .timelineLine {
+        display: none;
+    }
+
+    .quarterColumn::before {
+        display: none;
+    }
+
+    .quarterColumn {
+        padding-top: 0;
+    }
+
+    .legend {
+        gap: 0.75rem;
+    }
+}

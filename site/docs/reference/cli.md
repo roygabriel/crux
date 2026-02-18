@@ -120,7 +120,7 @@ crux completion fish               # Fish completions
 crux completion powershell         # PowerShell completions
 ```
 
-See [Installation — Shell Completions](/docs/getting-started/installation#shell-completions) for permanent installation instructions.
+See [Installation: Shell Completions](/docs/getting-started/installation#shell-completions) for permanent installation instructions.
 
 ## Global Flags
 

@@ -16,13 +16,13 @@ const features = [
     title: 'Persistent Memory',
     icon: '🧠',
     description:
-      'Three-layer memory system — markdown memory bank, SQLite with FTS5, and vector search via chromem-go. Every decision is recorded and searchable, even across sessions.',
+      'Three-layer memory system: markdown memory bank, SQLite with FTS5, and vector search via chromem-go. Every decision is recorded and searchable, even across sessions.',
   },
   {
     title: 'Phase-Based Workflows',
     icon: '📋',
     description:
-      'Two-document phase system with specs and prompt contracts. Verification gates enforce quality — the engine never advances until go build, go test, and go vet pass.',
+      'Two-document phase system with specs and prompt contracts. Verification gates enforce quality. The engine never advances until go build, go test, and go vet pass.',
   },
   {
     title: 'Plugin Architecture',
@@ -40,7 +40,7 @@ const features = [
     title: 'Zero Infrastructure',
     icon: '📦',
     description:
-      'Single binary, go build produces one executable. SQLite for structured data, chromem-go for vectors — both embedded. No Postgres, no Redis, no Docker.',
+      'Single binary, go build produces one executable. SQLite for structured data, chromem-go for vectors, both embedded. No Postgres, no Redis, no Docker.',
   },
 ];
 
@@ -61,7 +61,7 @@ function HeroSection() {
       <div className={styles.heroInner}>
         <div className={styles.heroContent}>
           <div className={styles.heroBadge}>
-            <span>⚡ Early Alpha — Under Active Development</span>
+            <span>⚡ Early Alpha · Under Active Development</span>
           </div>
           <Heading as="h1" className={styles.heroTitle}>
             Orchestrate AI Coding Agents
@@ -69,7 +69,7 @@ function HeroSection() {
           </Heading>
           <p className={styles.heroSubtitle}>
             Crux is a single-binary Go tool that coordinates multiple AI coding agents across tmux sessions.
-            Phase-based workflows, verification gates, and vector-searchable decision tracking — so your
+            Phase-based workflows, verification gates, and vector-searchable decision tracking so your
             orchestrator never loses track of what agents are doing.
           </p>
           <div className={styles.heroActions}>
@@ -82,7 +82,7 @@ function HeroSection() {
           </div>
           <div className={styles.alphaNotice}>
             <p>
-              <strong>Heads up —</strong> Crux is in early alpha. We're shipping fast and things will break.
+              <strong>Heads up:</strong> Crux is in early alpha. We're shipping fast and things will break.
               If you hit a bug or something feels off, we'd genuinely appreciate you{' '}
               <Link href="https://github.com/roygabriel/crux/issues">opening an issue</Link> so we can fix it.
             </p>
@@ -180,7 +180,7 @@ function ArchitectureSection() {
             Six-Layer Architecture
           </Heading>
           <p className={styles.sectionSubtitle}>
-            Clean separation of concerns — from the orchestrator loop down to tmux transport.
+            Clean separation of concerns, from the orchestrator loop down to tmux transport.
           </p>
         </div>
         <div className={styles.archLayers}>

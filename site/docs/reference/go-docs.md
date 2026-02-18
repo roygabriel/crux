@@ -23,9 +23,9 @@ These packages are internal and cannot be imported by external projects, but the
 | Package | Description |
 |---------|-------------|
 | `internal/orchestrator` | Main control loop, world state, agent assignment |
-| `internal/phase` | Phase engine — spec parsing, prompt contracts, gate runner |
+| `internal/phase` | Phase engine: spec parsing, prompt contracts, gate runner |
 | `internal/agent` | Agent registry, lifecycle management, messenger |
-| `internal/memory` | Memory system — bank, SQLite store, vector index, journal, work notes |
+| `internal/memory` | Memory system: bank, SQLite store, vector index, journal, work notes |
 | `internal/tmux` | Tmux session/pane management, watcher |
 | `internal/plugin` | Agent plugin interface and registry |
 | `internal/security` | Filesystem sandbox, permissions, audit logging, rate limiting |

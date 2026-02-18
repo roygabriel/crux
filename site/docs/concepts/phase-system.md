@@ -9,7 +9,7 @@ Every unit of work in Crux has two files: a **phase spec** and a **prompt doc**.
 
 ## Phase Spec (`PHASE{ID}.md`)
 
-The spec defines **what** — scope, dependencies, files, and exit criteria:
+The spec defines **what**: scope, dependencies, files, and exit criteria:
 
 ```markdown
 # Phase 2A: Core Types
@@ -63,7 +63,7 @@ Why this phase exists, what it isolates, why now.
 
 ## Prompt Doc (`PHASE{ID}-PROMPT.md`)
 
-The prompt doc defines **how** — the exact execution contract for each prompt:
+The prompt doc defines **how**: the exact execution contract for each prompt:
 
 ```markdown
 # Phase 2A Implementation Prompts

@@ -14,8 +14,8 @@ crux phase create --id 3A --name "API Layer" --depends-on 2A --prompts 3
 ```
 
 This generates two files in your `docs/phases/` directory:
-- `PHASE3A.md` — the spec (what)
-- `PHASE3A-PROMPT.md` — the prompt contract (how)
+- `PHASE3A.md` (the spec: what)
+- `PHASE3A-PROMPT.md` (the prompt contract: how)
 
 ## Writing a Good Spec
 

@@ -5,7 +5,7 @@ title: Memory System
 
 # Memory System
 
-Crux uses a three-layer memory architecture to solve the orchestrator context loss problem. Every decision, event, and piece of context is persisted and searchable — even across sessions.
+Crux uses a three-layer memory architecture to solve the orchestrator context loss problem. Every decision, event, and piece of context is persisted and searchable, even across sessions.
 
 ## Layer 1: File-Based Memory Bank
 
@@ -14,7 +14,7 @@ Six markdown files in `.crux/memory-bank/` provide human-readable project contex
 | File | Purpose |
 |------|---------|
 | `projectbrief.md` | What we're building |
-| `productContext.md` | Why — user problems, UX goals |
+| `productContext.md` | Why: user problems, UX goals |
 | `systemPatterns.md` | Architecture decisions, patterns used |
 | `techContext.md` | Stack, dependencies, constraints |
 | `activeContext.md` | Current focus, recent changes, next steps |
@@ -26,9 +26,9 @@ These files are read on agent launch and injected into agent prompts. They are u
 
 Structured storage at `.crux/memory.db` for machine-searchable data:
 
-- **decisions** — every decision with context, rationale, and outcome
-- **sessions** — session logs with agent, phase, prompt, and timestamps
-- **events** — append-only event log (event sourcing for replay)
+- **decisions**: every decision with context, rationale, and outcome
+- **sessions**: session logs with agent, phase, prompt, and timestamps
+- **events**: append-only event log (event sourcing for replay)
 - **FTS5** full-text search across all tables
 - Auto-prune entries older than the retention window (default 90 days)
 
@@ -82,7 +82,7 @@ Per-phase state tracking files (`work-notes/PHASE{ID}.md`) are auto-generated an
 - **Commit references**: linked to specific prompts
 - **Prompt progress**: checklist (`[x] Prompt 1`, `[ ] Prompt 2`)
 
-Work notes bridge sessions — when a session resumes, the orchestrator reads the work notes to understand where it left off.
+Work notes bridge sessions. When a session resumes, the orchestrator reads the work notes to understand where it left off.
 
 ## Embedding Providers
 

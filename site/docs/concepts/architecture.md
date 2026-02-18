@@ -86,7 +86,7 @@ Three-layer memory solving the orchestrator context loss problem. See [Memory Sy
 
 ### Layer 4: Agent Manager
 
-Manages agent lifecycle — spawning tmux sessions, monitoring health, sending structured messages, and parsing agent output through plugin adapters.
+Manages agent lifecycle: spawning tmux sessions, monitoring health, sending structured messages, and parsing agent output through plugin adapters.
 
 ### Layer 5: Security Layer
 

@@ -9,27 +9,67 @@ Crux is a single-binary Go CLI that orchestrates multiple AI coding agents runni
 
 ## Six-Layer Stack
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                    Orchestrator Loop                      │
-│  World State │ Agent Assignment │ Decision RAG │ Gates    │
-├──────────┬───────────┬───────────┬───────────────────────┤
-│  Phase   │  Memory   │  Agent    │  Security             │
-│  Engine  │  System   │  Manager  │  Layer                │
-├──────────┼───────────┼───────────┼───────────────────────┤
-│  Spec    │  Bank     │  Registry │  Sandbox              │
-│  Parser  │  (md)     │  Lifecycle│  Permissions           │
-│  Prompt  │  SQLite   │  Messenger│  Audit                │
-│  Contract│  Vector   │  Health   │  Rate Limit           │
-│  Gate    │  Journal  │  Scheduler│  Git Safety           │
-│  Runner  │  WorkNotes│           │                       │
-├──────────┴───────────┴───────────┴───────────────────────┤
-│                    Plugin Layer                           │
-│  Claude Code │ Codex CLI │ Gemini CLI │ Generic           │
-├──────────────┴───────────┴────────────┴──────────────────┤
-│                    tmux Layer                             │
-│  Sessions │ Panes │ Windows │ capture-pane │ send-keys    │
-└──────────────────────────────────────────────────────────┘
+```mermaid
+block-beta
+  columns 4
+
+  block:orchestrator:4
+    columns 4
+    A["Orchestrator Loop"]:4
+    B["World State"] C["Agent Assignment"] D["Decision RAG"] E["Gates"]
+  end
+
+  block:phase:1
+    columns 1
+    F["Phase Engine"]
+    F1["Spec Parser"]
+    F2["Prompt Contract"]
+    F3["Gate Runner"]
+  end
+
+  block:memory:1
+    columns 1
+    G["Memory System"]
+    G1["Bank (md)"]
+    G2["SQLite"]
+    G3["Vector / Journal"]
+  end
+
+  block:agent:1
+    columns 1
+    H["Agent Manager"]
+    H1["Registry"]
+    H2["Lifecycle"]
+    H3["Messenger"]
+  end
+
+  block:security:1
+    columns 1
+    I["Security Layer"]
+    I1["Sandbox"]
+    I2["Permissions"]
+    I3["Audit / Rate Limit"]
+  end
+
+  block:plugin:4
+    columns 4
+    J["Plugin Layer"]:4
+    J1["Claude Code"] J2["Codex CLI"] J3["Gemini CLI"] J4["Generic"]
+  end
+
+  block:tmux:4
+    columns 4
+    K["tmux Layer"]:4
+    K1["Sessions"] K2["Panes"] K3["capture-pane"] K4["send-keys"]
+  end
+
+  style orchestrator fill:#D97706,color:#fff
+  style phase fill:#B45309,color:#fff
+  style memory fill:#B45309,color:#fff
+  style agent fill:#B45309,color:#fff
+  style security fill:#B45309,color:#fff
+  style plugin fill:#F59E0B,color:#1C1917
+  style tmux fill:#0D9488,color:#fff
 ```
 
 ### Layer 1: Orchestrator Loop

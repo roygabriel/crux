@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Go 1.24+** — [install](https://go.dev/dl/)
+- **Go 1.25+** — [install](https://go.dev/dl/)
 - **golangci-lint** — `go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest`
 - **make**
 - **tmux** (optional) — required only for manual end-to-end testing with real agents

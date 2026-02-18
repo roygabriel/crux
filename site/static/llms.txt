@@ -8,30 +8,30 @@ Key technical constraints: all code compiles with CGO_ENABLED=0, SQLite via ncru
 
 ## Docs
 
-- [Getting Started](https://roygabriel.github.io/crux/docs/getting-started/installation): Installation, quick start, first project walkthrough
-- [Architecture](https://roygabriel.github.io/crux/docs/concepts/architecture): Core architecture reference — orchestrator loop, agent plugins, memory system, security model
-- [Phase System](https://roygabriel.github.io/crux/docs/concepts/phase-system): Two-document system (phase spec + prompt doc), phase engine, dependency graph, verification gates
-- [Memory System](https://roygabriel.github.io/crux/docs/concepts/memory): Three-layer memory — markdown bank, SQLite operational store with FTS5, chromem-go vector index
-- [Security Model](https://roygabriel.github.io/crux/docs/concepts/security): Four-tier permissions (readonly/standard/elevated/autonomous), filesystem sandbox, audit logging, rate limiting
-- [Configuration](https://roygabriel.github.io/crux/docs/reference/configuration): YAML config reference, all fields with types and defaults, environment variable overrides
-- [CLI Reference](https://roygabriel.github.io/crux/docs/reference/cli): All commands — init, start, status, phase, decisions, notes, replay, audit, plan, instruct, prefs
-- [Writing Phases](https://roygabriel.github.io/crux/docs/guides/writing-phases): How to write phase specs and prompt docs, decomposition heuristics, exit criteria rules
-- [Multi-Agent Workflows](https://roygabriel.github.io/crux/docs/guides/multi-agent): Running parallel agents, file scope validation, branch management, conflict detection
-- [Custom Plugins](https://roygabriel.github.io/crux/docs/guides/custom-plugins): Building an AgentPlugin implementation — LaunchCmd, DetectReady, DetectBusy, FormatMessage, ParseOutput
+- [Getting Started](https://runcrux.dev/docs/getting-started/installation): Installation, quick start, first project walkthrough
+- [Architecture](https://runcrux.dev/docs/concepts/architecture): Core architecture reference — orchestrator loop, agent plugins, memory system, security model
+- [Phase System](https://runcrux.dev/docs/concepts/phase-system): Two-document system (phase spec + prompt doc), phase engine, dependency graph, verification gates
+- [Memory System](https://runcrux.dev/docs/concepts/memory): Three-layer memory — markdown bank, SQLite operational store with FTS5, chromem-go vector index
+- [Security Model](https://runcrux.dev/docs/concepts/security): Four-tier permissions (readonly/standard/elevated/autonomous), filesystem sandbox, audit logging, rate limiting
+- [Configuration](https://runcrux.dev/docs/reference/configuration): YAML config reference, all fields with types and defaults, environment variable overrides
+- [CLI Reference](https://runcrux.dev/docs/reference/cli): All commands — init, start, status, phase, decisions, notes, replay, audit, plan, instruct, prefs
+- [Writing Phases](https://runcrux.dev/docs/guides/writing-phases): How to write phase specs and prompt docs, decomposition heuristics, exit criteria rules
+- [Multi-Agent Workflows](https://runcrux.dev/docs/guides/multi-agent): Running parallel agents, file scope validation, branch management, conflict detection
+- [Custom Plugins](https://runcrux.dev/docs/guides/custom-plugins): Building an AgentPlugin implementation — LaunchCmd, DetectReady, DetectBusy, FormatMessage, ParseOutput
 
 ## API
 
-- [AgentPlugin Interface](https://roygabriel.github.io/crux/docs/reference/agent-plugin): Go interface that each CLI tool implements — Name, LaunchCmd, DetectReady, DetectBusy, DetectError, DetectRateLimit, FormatMessage, ParseOutput, Capabilities
-- [Phase Spec Format](https://roygabriel.github.io/crux/docs/reference/phase-spec-format): Status, Depends On, Design Rationale, Tasks (by prompt), Files (New/Modified/Referenced), Exit Criteria
-- [Prompt Doc Format](https://roygabriel.github.io/crux/docs/reference/prompt-doc-format): Required Reading, Interface Contract, Task, Verification, Acceptance Criteria, Stop Rule per prompt
-- [Message Protocol](https://roygabriel.github.io/crux/docs/reference/message-protocol): JSON envelope format for orchestrator-agent communication over tmux
+- [AgentPlugin Interface](https://runcrux.dev/docs/reference/agent-plugin): Go interface that each CLI tool implements — Name, LaunchCmd, DetectReady, DetectBusy, DetectError, DetectRateLimit, FormatMessage, ParseOutput, Capabilities
+- [Phase Spec Format](https://runcrux.dev/docs/reference/phase-spec-format): Status, Depends On, Design Rationale, Tasks (by prompt), Files (New/Modified/Referenced), Exit Criteria
+- [Prompt Doc Format](https://runcrux.dev/docs/reference/prompt-doc-format): Required Reading, Interface Contract, Task, Verification, Acceptance Criteria, Stop Rule per prompt
+- [Message Protocol](https://runcrux.dev/docs/reference/message-protocol): JSON envelope format for orchestrator-agent communication over tmux
 
 ## Optional
 
-- [Telegram Integration](https://roygabriel.github.io/crux/docs/guides/telegram): Telegram bot for remote monitoring, notifications, and approval workflows
-- [MCP Server Registry](https://roygabriel.github.io/crux/docs/guides/mcp-registry): Parse and register MCP servers from Claude/Codex/Gemini configs for tool-aware task routing
-- [Troubleshooting](https://roygabriel.github.io/crux/docs/troubleshooting): Common issues — agent detection, gate failures, rate limits, tmux sessions, SQLite locking, vector search
-- [Contributing](https://roygabriel.github.io/crux/docs/contributing): Development setup, code conventions, PR process, architecture decisions
+- [Telegram Integration](https://runcrux.dev/docs/guides/telegram): Telegram bot for remote monitoring, notifications, and approval workflows
+- [MCP Server Registry](https://runcrux.dev/docs/guides/mcp-registry): Parse and register MCP servers from Claude/Codex/Gemini configs for tool-aware task routing
+- [Troubleshooting](https://runcrux.dev/docs/troubleshooting): Common issues — agent detection, gate failures, rate limits, tmux sessions, SQLite locking, vector search
+- [Contributing](https://runcrux.dev/docs/contributing): Development setup, code conventions, PR process, architecture decisions
 
 ## Source
 

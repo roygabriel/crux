@@ -134,6 +134,38 @@
   color: var(--ifm-color-primary) !important;
 }
 
+/* ─── Alpha Notice ─── */
+.alphaNotice {
+  margin-top: 1.5rem;
+  padding: 0.85rem 1.15rem;
+  border-radius: 10px;
+  background: rgba(217, 119, 6, 0.06);
+  border: 1px solid rgba(217, 119, 6, 0.15);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--crux-text-muted);
+}
+
+[data-theme='dark'] .alphaNotice {
+  background: rgba(251, 191, 36, 0.06);
+  border-color: rgba(251, 191, 36, 0.15);
+}
+
+.alphaNotice p {
+  margin: 0;
+}
+
+.alphaNotice strong {
+  color: var(--ifm-color-primary);
+}
+
+.alphaNotice a {
+  color: var(--ifm-color-primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* ─── Terminal Window ─── */
 .heroTerminal {
   position: relative;

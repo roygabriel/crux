@@ -61,7 +61,7 @@ function HeroSection() {
       <div className={styles.heroInner}>
         <div className={styles.heroContent}>
           <div className={styles.heroBadge}>
-            <span>🚧 Under Active Development</span>
+            <span>⚡ Early Alpha — Under Active Development</span>
           </div>
           <Heading as="h1" className={styles.heroTitle}>
             Orchestrate AI Coding Agents
@@ -79,6 +79,13 @@ function HeroSection() {
             <Link className={styles.heroSecondary} href="https://github.com/roygabriel/crux">
               View on GitHub
             </Link>
+          </div>
+          <div className={styles.alphaNotice}>
+            <p>
+              <strong>Heads up —</strong> Crux is in early alpha. We're shipping fast and things will break.
+              If you hit a bug or something feels off, we'd genuinely appreciate you{' '}
+              <Link href="https://github.com/roygabriel/crux/issues">opening an issue</Link> so we can fix it.
+            </p>
           </div>
         </div>
         <div className={styles.heroTerminal}>

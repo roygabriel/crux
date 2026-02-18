@@ -27,6 +27,8 @@ type Config struct {
 	Context ContextConfig `yaml:"context" json:"context,omitempty"`
 	// Planner configures the planning agent.
 	Planner PlannerConfig `yaml:"planner" json:"planner,omitempty"`
+	// Docgen configures the document generation agent.
+	Docgen DocgenConfig `yaml:"docgen" json:"docgen,omitempty"`
 	// GenericPlugins maps custom plugin names to their regex-based configuration.
 	GenericPlugins map[string]GenericPluginConfig `yaml:"generic_plugins" json:"generic_plugins,omitempty"`
 }
@@ -116,6 +118,16 @@ type PlannerConfig struct {
 	// Anthropic SDK directly. "claude", "codex", or "gemini" uses the
 	// corresponding CLI agent as a subprocess.
 	Agent string `yaml:"agent" json:"agent,omitempty"`
+}
+
+// DocgenConfig configures the document generation agent.
+type DocgenConfig struct {
+	// Model is the Anthropic model identifier for document generation.
+	Model string `yaml:"model" json:"model,omitempty"`
+	// MaxTokens is the maximum output tokens per generation request.
+	MaxTokens int `yaml:"max_tokens" json:"max_tokens,omitempty"`
+	// OutputDir is the directory to write generated documents.
+	OutputDir string `yaml:"output_dir" json:"output_dir,omitempty"`
 }
 
 // ContextConfig configures the orchestrator context budget for prompt injection.
@@ -251,10 +263,22 @@ func applyEnvOverrides(cfg *Config) {
 		}
 	}
 
+	// String overrides for docgen config.
+	docgenStringOverrides := map[string]*string{
+		"CRUX_DOCGEN_MODEL":      &cfg.Docgen.Model,
+		"CRUX_DOCGEN_OUTPUT_DIR": &cfg.Docgen.OutputDir,
+	}
+	for env, field := range docgenStringOverrides {
+		if v, ok := os.LookupEnv(env); ok {
+			*field = v
+		}
+	}
+
 	intOverrides := map[string]*int{
 		"CRUX_SECURITY_MAX_CMDS_PER_MIN":      &cfg.Security.MaxCmdsPerMin,
 		"CRUX_SECURITY_MAX_FILES_PER_SESSION": &cfg.Security.MaxFilesPerSession,
 		"CRUX_PLANNER_MAX_TOKENS":             &cfg.Planner.MaxTokens,
+		"CRUX_DOCGEN_MAX_TOKENS":              &cfg.Docgen.MaxTokens,
 	}
 
 	for env, field := range intOverrides {

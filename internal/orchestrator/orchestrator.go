@@ -9,6 +9,7 @@ import (
 
 	"github.com/roygabriel/crux/internal/agent"
 	"github.com/roygabriel/crux/internal/config"
+	"github.com/roygabriel/crux/internal/instruct"
 	"github.com/roygabriel/crux/internal/memory/journal"
 	"github.com/roygabriel/crux/internal/memory/session"
 	"github.com/roygabriel/crux/internal/memory/worknotes"
@@ -58,6 +59,9 @@ type Orchestrator struct {
 
 	// tickHook is called at the end of each tick for external consumers (e.g. TUI).
 	tickHook func()
+
+	// distributor generates and writes per-agent instruction files.
+	distributor *instruct.Distributor
 
 	// conflicts detects and resolves file conflicts between parallel agents.
 	conflicts *ConflictDetector
@@ -136,6 +140,11 @@ func (o *Orchestrator) SetSecurityGate(g SecurityGate) {
 	o.security = g
 }
 
+// SetDistributor configures the instruction file distributor.
+func (o *Orchestrator) SetDistributor(d *instruct.Distributor) {
+	o.distributor = d
+}
+
 // SetTmuxSessionManager sets the tmux session manager used to create
 // the top-level session that hosts agent panes.
 func (o *Orchestrator) SetTmuxSessionManager(sm *tmux.SessionManager) {
@@ -197,6 +206,13 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 			return fmt.Errorf("create tmux session: %w", err)
 		}
 		o.logger.Info("created tmux session", "session", o.tmuxSessionName)
+	}
+
+	// Generate instruction files for all agents before spawning.
+	if o.distributor != nil {
+		if err := o.distributor.GenerateAll(ctx); err != nil {
+			o.logger.Warn("instruction generation failed", "error", err)
+		}
 	}
 
 	// Spawn configured agents.
@@ -471,6 +487,8 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 		if newSpec := o.engine.CurrentPhase(); newSpec != nil {
 			o.worldState.UpdatePhase(newSpec.ID, newSpec.Name)
 		}
+		// Phase context changed; regenerate instructions for all agents.
+		o.regenerateInstructions(ctx)
 	} else {
 		o.logger.Warn("prompt gates failed",
 			"agent_id", id,
@@ -498,6 +516,32 @@ func (o *Orchestrator) handlePromptResponse(ctx context.Context, inst *agent.Age
 			"agent_id", inst.Agent.ID,
 			"error", err,
 		)
+	}
+}
+
+// regenerateInstructions re-renders instructions for all agents after a
+// phase advancement. Agents that support mid-session reload (Gemini, Codex)
+// are reloaded immediately. Restart-based agents (Claude, Copilot) are
+// only flagged; the orchestrator handles restart at session boundaries.
+func (o *Orchestrator) regenerateInstructions(ctx context.Context) {
+	if o.distributor == nil {
+		return
+	}
+
+	for _, inst := range o.registry.List() {
+		agentID := string(inst.Agent.ID)
+		changed, err := o.distributor.RegenerateIfStale(ctx, agentID)
+		if err != nil {
+			o.logger.Warn("instruction regeneration failed",
+				"agent_id", agentID, "error", err)
+			continue
+		}
+		if changed && o.distributor.NeedsReload(agentID) {
+			if err := o.distributor.ReloadAgent(ctx, agentID); err != nil {
+				o.logger.Warn("agent reload failed",
+					"agent_id", agentID, "error", err)
+			}
+		}
 	}
 }
 

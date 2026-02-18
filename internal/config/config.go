@@ -166,7 +166,9 @@ func (c *Config) Validate() error {
 		validPlugins[name] = true
 	}
 	validRoles := map[string]bool{
-		"orchestrator": true, "project-manager": true, "engineer": true, "reviewer": true,
+		"orchestrator": true, "planner": true, "project-manager": true,
+		"software-engineer": true, "systems-engineer": true, "code-reviewer": true,
+		"engineer": true, "reviewer": true,
 	}
 	validPerms := map[string]bool{
 		"readonly": true, "standard": true, "elevated": true, "autonomous": true,

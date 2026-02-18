@@ -12,13 +12,37 @@ type AgentRole string
 const (
 	// RoleOrchestrator is the top-level control agent.
 	RoleOrchestrator AgentRole = "orchestrator"
+	// RolePlanner coordinates phase planning and dependency ordering.
+	RolePlanner AgentRole = "planner"
 	// RoleProjectManager coordinates task assignment and phase progression.
 	RoleProjectManager AgentRole = "project-manager"
-	// RoleEngineer executes implementation prompts.
+	// RoleSoftwareEngineer executes implementation prompts.
+	RoleSoftwareEngineer AgentRole = "software-engineer"
+	// RoleSystemsEngineer handles infrastructure and tooling prompts.
+	RoleSystemsEngineer AgentRole = "systems-engineer"
+	// RoleCodeReviewer performs code review and quality checks.
+	RoleCodeReviewer AgentRole = "code-reviewer"
+
+	// RoleEngineer is a legacy alias for RoleSoftwareEngineer.
+	// Kept for backward compatibility with existing config files.
 	RoleEngineer AgentRole = "engineer"
-	// RoleReviewer performs code review and quality checks.
+	// RoleReviewer is a legacy alias for RoleCodeReviewer.
+	// Kept for backward compatibility with existing config files.
 	RoleReviewer AgentRole = "reviewer"
 )
+
+// NormalizeAgentRole maps legacy role names to their current equivalents.
+// Unknown roles pass through unchanged.
+func NormalizeAgentRole(role AgentRole) AgentRole {
+	switch role {
+	case RoleEngineer:
+		return RoleSoftwareEngineer
+	case RoleReviewer:
+		return RoleCodeReviewer
+	default:
+		return role
+	}
+}
 
 // String returns the string representation of an AgentRole.
 func (r AgentRole) String() string { return string(r) }

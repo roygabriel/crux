@@ -115,7 +115,7 @@ func (cb *ContextBuilder) BuildForPrompt(
 		workNotesText, decisionsText, bankSummary = cb.enforcer.Enforce(workNotesText, decisionsText, bankSummary)
 	}
 
-	roleDefinition := roles.Definition(agentRole)
+	roleDefinition := roles.Definition(roles.NormalizeRole(agentRole))
 
 	return BuildPromptData(contract, spec, workNotesText, decisionsText, bankSummary, agentRole, agentPerm, roleDefinition), nil
 }

@@ -44,6 +44,12 @@ type Orchestrator struct {
 	logger       *slog.Logger
 	pollInterval time.Duration
 
+	// tmuxSM manages the top-level tmux session where agent panes live.
+	tmuxSM *tmux.SessionManager
+
+	// tmuxSessionName is the name of the tmux session created for this run.
+	tmuxSessionName string
+
 	// security gates agent actions against their permission tier.
 	security SecurityGate
 
@@ -130,6 +136,12 @@ func (o *Orchestrator) SetSecurityGate(g SecurityGate) {
 	o.security = g
 }
 
+// SetTmuxSessionManager sets the tmux session manager used to create
+// the top-level session that hosts agent panes.
+func (o *Orchestrator) SetTmuxSessionManager(sm *tmux.SessionManager) {
+	o.tmuxSM = sm
+}
+
 // SetTickHook registers a function called at the end of each tick iteration.
 func (o *Orchestrator) SetTickHook(fn func()) {
 	o.tickHook = fn
@@ -169,6 +181,22 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	// Update world state with current phase.
 	if spec := o.engine.CurrentPhase(); spec != nil {
 		o.worldState.UpdatePhase(spec.ID, spec.Name)
+	}
+
+	// Create the tmux session that will host agent panes.
+	if o.tmuxSM != nil {
+		o.tmuxSessionName = "crux-" + sc.ID
+		// Kill any stale session from a prior crash to avoid a Create failure.
+		if exists, _ := o.tmuxSM.Exists(ctx, o.tmuxSessionName); exists {
+			o.logger.Warn("killing stale tmux session", "session", o.tmuxSessionName)
+			if err := o.tmuxSM.Kill(ctx, o.tmuxSessionName); err != nil {
+				return fmt.Errorf("kill stale tmux session: %w", err)
+			}
+		}
+		if err := o.tmuxSM.Create(ctx, o.tmuxSessionName); err != nil {
+			return fmt.Errorf("create tmux session: %w", err)
+		}
+		o.logger.Info("created tmux session", "session", o.tmuxSessionName)
 	}
 
 	// Spawn configured agents.
@@ -442,6 +470,12 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 
 // spawnAgents creates tmux panes and launches agents per config.
 func (o *Orchestrator) spawnAgents(ctx context.Context) error {
+	// Use the tmux session name if available, fall back to session ID.
+	sessionID := o.session.ID
+	if o.tmuxSessionName != "" {
+		sessionID = o.tmuxSessionName
+	}
+
 	for name, agentCfg := range o.cfg.Agents {
 		a := types.Agent{
 			ID:         types.AgentID(name),
@@ -449,7 +483,7 @@ func (o *Orchestrator) spawnAgents(ctx context.Context) error {
 			Plugin:     agentCfg.Plugin,
 			Role:       types.AgentRole(agentCfg.Role),
 			Permission: types.Permission(agentCfg.Permission),
-			SessionID:  o.session.ID,
+			SessionID:  sessionID,
 		}
 		if err := o.registry.Spawn(ctx, a); err != nil {
 			return fmt.Errorf("spawn agent %q: %w", name, err)
@@ -500,7 +534,8 @@ func (o *Orchestrator) saveSession() {
 	}
 }
 
-// shutdown saves session, stops watchers, and kills all agents.
+// shutdown saves session, stops watchers, kills all agents, and destroys
+// the tmux session.
 func (o *Orchestrator) shutdown(ctx context.Context) error {
 	o.saveSession()
 	o.watcher.Stop()
@@ -508,6 +543,13 @@ func (o *Orchestrator) shutdown(ctx context.Context) error {
 	for _, inst := range o.registry.List() {
 		if err := o.registry.Kill(ctx, inst.Agent.ID); err != nil {
 			o.logger.Warn("failed to kill agent during shutdown", "agent_id", inst.Agent.ID, "error", err)
+		}
+	}
+
+	// Destroy the tmux session created for this run.
+	if o.tmuxSM != nil && o.tmuxSessionName != "" {
+		if err := o.tmuxSM.Kill(ctx, o.tmuxSessionName); err != nil {
+			o.logger.Warn("failed to kill tmux session during shutdown", "session", o.tmuxSessionName, "error", err)
 		}
 	}
 

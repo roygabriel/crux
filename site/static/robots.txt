@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://roygabriel.github.io/crux/sitemap.xml
+Sitemap: https://runcrux.dev/sitemap.xml

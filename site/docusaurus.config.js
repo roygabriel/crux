@@ -7,8 +7,8 @@ const config = {
   tagline: 'Coordinate AI coding agents in tmux sessions with phase-based workflows, persistent memory, and verification gates.',
   favicon: 'img/favicon.svg',
 
-  url: 'https://roygabriel.github.io',
-  baseUrl: '/crux/',
+  url: 'https://runcrux.dev',
+  baseUrl: '/',
 
   organizationName: 'roygabriel',
   projectName: 'crux',
@@ -58,7 +58,7 @@ const config = {
         operatingSystem: 'Linux, macOS',
         programmingLanguage: 'Go',
         license: 'https://opensource.org/licenses/MIT',
-        url: 'https://roygabriel.github.io/crux/',
+        url: 'https://runcrux.dev/',
         codeRepository: 'https://github.com/roygabriel/crux',
         author: {
           '@type': 'Person',

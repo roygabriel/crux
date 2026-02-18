@@ -268,6 +268,13 @@ crux/
 │   │   ├── assignment.go         Agent-to-task assignment
 │   │   └── decisionrag.go        Vector search context injection
 │   │
+│   ├── scaffold/                 Embedded default config + templates
+│   │   ├── default-config.yaml
+│   │   └── templates/
+│   │
+│   ├── wizard/                   Interactive init wizard (bubbletea)
+│   │   └── wizard.go
+│   │
 │   ├── security/                 Safety enforcement
 │   │   ├── sandbox.go            Filesystem path validation
 │   │   ├── permissions.go        4-tier permission model
@@ -309,14 +316,6 @@ crux/
 │       ├── PHASE1A.md            Phase spec
 │       ├── PHASE1A-PROMPT.md     Prompt-by-prompt execution contract
 │       └── ...
-│
-├── templates/                    Templates for `crux init` scaffolding
-│   ├── phase-spec.md
-│   ├── phase-prompt.md
-│   └── work-notes.md
-│
-├── configs/
-│   └── default.yaml              Default orchestrator configuration
 │
 ├── CLAUDE.md                     Claude Code auto-detection instructions
 ├── LLM.md                        Detailed agent conventions
@@ -405,7 +404,9 @@ All agent commits land on feature branches (`crux/<agent-id>/<task>`). Merging t
 ## CLI
 
 ```
-crux init                          Initialize project (.crux/, docs/phases/, work-notes/)
+crux init                          Interactive wizard (when in a terminal)
+crux init -y                       Non-interactive, use defaults
+crux init --example httpapi        Seed with named example project
 crux start                         Start orchestration loop
 crux status                        Show world state (agents, phases, progress)
 crux phase create --id 2a          Generate phase spec + prompt doc

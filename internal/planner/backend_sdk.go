@@ -101,10 +101,7 @@ func (b *SDKBackend) SystemPrompt() string {
 
 // stream starts a streaming API call and returns a channel of StreamChunks.
 func (b *SDKBackend) stream(ctx context.Context) (<-chan StreamChunk, error) {
-	maxTok := b.maxTokens
-	if maxTok <= 0 {
-		maxTok = defaultMaxTokens
-	}
+	maxTok := maxOutputTokens(string(b.model), b.maxTokens)
 
 	ctx, cancel := context.WithTimeout(ctx, streamTimeout)
 

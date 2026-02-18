@@ -32,6 +32,7 @@ func RegisterTools(agent *Agent, projectRoot string) {
 		&readFileTool{root: projectRoot},
 		&validateSpecTool{},
 		&generatePhaseDocsTool{root: projectRoot},
+		&generateSinglePhaseTool{root: projectRoot},
 	}
 
 	toolDefs := make([]anthropic.ToolUnionParam, len(handlers))
@@ -69,9 +70,10 @@ func extractPropertyNames(schema json.RawMessage) []string {
 // whether the execution resulted in an error.
 func ExecuteTool(ctx context.Context, projectRoot string, name string, input json.RawMessage) (result string, isError bool) {
 	handlers := map[string]ToolHandler{
-		"read_file":            &readFileTool{root: projectRoot},
-		"validate_spec":       &validateSpecTool{},
-		"generate_phase_docs": &generatePhaseDocsTool{root: projectRoot},
+		"read_file":              &readFileTool{root: projectRoot},
+		"validate_spec":         &validateSpecTool{},
+		"generate_phase_docs":   &generatePhaseDocsTool{root: projectRoot},
+		"generate_single_phase": &generateSinglePhaseTool{root: projectRoot},
 	}
 
 	handler, ok := handlers[name]
@@ -457,6 +459,82 @@ func (t *generatePhaseDocsTool) Execute(_ context.Context, input json.RawMessage
 		}
 		fmt.Fprintf(&result, "- %s\n", rel)
 	}
+	if len(validationWarnings) > 0 {
+		fmt.Fprintf(&result, "\nValidation warnings:\n")
+		for _, w := range validationWarnings {
+			fmt.Fprintf(&result, "- %s\n", w)
+		}
+	}
+
+	return result.String(), nil
+}
+
+// --- generate_single_phase tool ---
+
+type generateSinglePhaseTool struct {
+	root string
+}
+
+func (t *generateSinglePhaseTool) Name() string { return "generate_single_phase" }
+
+func (t *generateSinglePhaseTool) Description() string {
+	return "Generate spec and prompt files for a single phase. Call once per phase to avoid token-limit truncation. Preferred over generate_phase_docs for plans with 3 or more phases."
+}
+
+func (t *generateSinglePhaseTool) InputSchema() json.RawMessage {
+	return json.RawMessage(`{
+		"id": {"type": "string", "description": "Phase identifier (e.g. 1A, 2B)"},
+		"spec_content": {"type": "string", "description": "Full markdown content for the PHASE<ID>.md spec file"},
+		"prompt_content": {"type": "string", "description": "Full markdown content for the PHASE<ID>-PROMPT.md prompt file"}
+	}`)
+}
+
+func (t *generateSinglePhaseTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
+	var p phaseInput
+	if err := json.Unmarshal(input, &p); err != nil {
+		return "", fmt.Errorf("invalid input: %w", err)
+	}
+	if p.ID == "" {
+		return "", fmt.Errorf("phase id is required")
+	}
+
+	phasesDir := filepath.Join(t.root, "docs", "phases")
+	if err := os.MkdirAll(phasesDir, 0o755); err != nil {
+		return "", fmt.Errorf("creating phases directory: %w", err)
+	}
+
+	// Validate before writing.
+	var validationWarnings []string
+	if issues := validateSpec(p.SpecContent); len(issues) > 0 {
+		validationWarnings = append(validationWarnings,
+			fmt.Sprintf("PHASE%s.md: %s", p.ID, strings.Join(issues, "; ")))
+	}
+	if issues := validatePromptDoc(p.PromptContent); len(issues) > 0 {
+		validationWarnings = append(validationWarnings,
+			fmt.Sprintf("PHASE%s-PROMPT.md: %s", p.ID, strings.Join(issues, "; ")))
+	}
+
+	specPath := filepath.Join(phasesDir, fmt.Sprintf("PHASE%s.md", p.ID))
+	promptPath := filepath.Join(phasesDir, fmt.Sprintf("PHASE%s-PROMPT.md", p.ID))
+
+	if err := os.WriteFile(specPath, []byte(p.SpecContent), 0o644); err != nil {
+		return "", fmt.Errorf("writing %s: %w", specPath, err)
+	}
+	if err := os.WriteFile(promptPath, []byte(p.PromptContent), 0o644); err != nil {
+		return "", fmt.Errorf("writing %s: %w", promptPath, err)
+	}
+
+	var result strings.Builder
+	specRel, err := filepath.Rel(t.root, specPath)
+	if err != nil {
+		specRel = specPath
+	}
+	promptRel, err := filepath.Rel(t.root, promptPath)
+	if err != nil {
+		promptRel = promptPath
+	}
+	fmt.Fprintf(&result, "Phase %s written:\n- %s\n- %s\n", p.ID, specRel, promptRel)
+
 	if len(validationWarnings) > 0 {
 		fmt.Fprintf(&result, "\nValidation warnings:\n")
 		for _, w := range validationWarnings {

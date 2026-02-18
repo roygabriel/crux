@@ -285,7 +285,7 @@ func (m TUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+a":
 		if !m.streaming {
-			return m, m.sendMessageCmd("Please generate the final phase documents now. Use the generate_phase_docs tool.")
+			return m, m.sendMessageCmd("The plan is approved. Please generate all phase files now using the generate_single_phase tool, one phase at a time.")
 		}
 		return m, nil
 
@@ -399,7 +399,7 @@ func (m *TUIModel) autoContinueCmd() tea.Cmd {
 	m.streamBuf.Reset()
 	agent := m.agent
 	sendCmd := func() tea.Msg {
-		ch, err := agent.SendMessage(context.Background(), "Continue from where you left off.")
+		ch, err := agent.SendMessage(context.Background(), "Your previous response was cut short by the token limit. If you were about to call a tool, please call it now. If you were generating phase docs, use the generate_single_phase tool to generate one phase at a time.")
 		if err != nil {
 			return StreamErrMsg{Err: err}
 		}
@@ -439,7 +439,7 @@ func (m TUIModel) statusBar() string {
 		left += fmt.Sprintf(" | Phases: %d", m.phaseCount)
 	}
 
-	right := "Ctrl+A: accept | Ctrl+R: reset | Esc: quit "
+	right := "Ctrl+A: generate | Ctrl+R: reset | Esc: quit "
 
 	leftWidth := m.width / 2
 	rightWidth := m.width - leftWidth

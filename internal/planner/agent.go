@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -14,8 +15,32 @@ import (
 // DefaultModel is the model used when none is specified.
 const DefaultModel = "claude-sonnet-4-5-20250929"
 
-// defaultMaxTokens is the fallback output token limit when none is configured.
-const defaultMaxTokens = 16384
+// modelMaxTokens maps model name prefixes to their recommended max output tokens.
+var modelMaxTokens = map[string]int{
+	"claude-sonnet-4-5": 16384,
+	"claude-opus-4":     32768,
+	"claude-haiku-4-5":  16384,
+}
+
+// defaultFallbackMaxTokens is used when the model is unknown and no explicit
+// limit is configured.
+const defaultFallbackMaxTokens = 32768
+
+// maxOutputTokens returns the output token limit for a streaming request.
+// If configuredMax > 0 the user explicitly set a limit, so use it as-is.
+// Otherwise, match the model name by prefix and fall back to
+// defaultFallbackMaxTokens for unknown models.
+func maxOutputTokens(model string, configuredMax int) int {
+	if configuredMax > 0 {
+		return configuredMax
+	}
+	for prefix, max := range modelMaxTokens {
+		if strings.HasPrefix(model, prefix) {
+			return max
+		}
+	}
+	return defaultFallbackMaxTokens
+}
 
 // connectTimeout is the maximum time to wait for the API to accept a request
 // (i.e. receive the first message_start event).

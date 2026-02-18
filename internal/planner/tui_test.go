@@ -705,6 +705,39 @@ func TestTUIModel_ContinueCount_ResetsOnReset(t *testing.T) {
 	}
 }
 
+func TestTUIModel_CtrlA_SendsGenerateMessage(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	model := updated.(TUIModel)
+
+	// Should have added a user message.
+	if len(model.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(model.messages))
+	}
+	if model.messages[0].role != "user" {
+		t.Errorf("message role = %q, want 'user'", model.messages[0].role)
+	}
+	if !strings.Contains(model.messages[0].content, "generate_single_phase") {
+		t.Errorf("Ctrl+A message should mention generate_single_phase, got: %q", model.messages[0].content)
+	}
+	if !strings.Contains(model.messages[0].content, "one phase at a time") {
+		t.Errorf("Ctrl+A message should mention 'one phase at a time', got: %q", model.messages[0].content)
+	}
+	if cmd == nil {
+		t.Error("expected a cmd from Ctrl+A")
+	}
+}
+
+func TestTUIModel_StatusBar_GenerateLabel(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	bar := m.statusBar()
+
+	if !strings.Contains(bar, "Ctrl+A: generate") {
+		t.Errorf("status bar should show 'Ctrl+A: generate', got: %q", bar)
+	}
+}
+
 func TestReadStreamMsg_Truncated(t *testing.T) {
 	ch := make(chan StreamChunk, 1)
 	ch <- StreamChunk{Truncated: true}

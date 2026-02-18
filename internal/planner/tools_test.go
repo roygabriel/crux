@@ -566,7 +566,7 @@ func TestExecuteTool_DispatchesCorrectly(t *testing.T) {
 
 // --- RegisterTools test ---
 
-func TestRegisterTools_RegistersThreeTools(t *testing.T) {
+func TestRegisterTools_RegistersFourTools(t *testing.T) {
 	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil, 0)
 	if err != nil {
 		t.Fatalf("NewAgent: %v", err)
@@ -574,8 +574,8 @@ func TestRegisterTools_RegistersThreeTools(t *testing.T) {
 
 	RegisterTools(agent, t.TempDir())
 
-	if len(agent.sdkBackend.tools) != 3 {
-		t.Fatalf("expected 3 tools, got %d", len(agent.sdkBackend.tools))
+	if len(agent.sdkBackend.tools) != 4 {
+		t.Fatalf("expected 4 tools, got %d", len(agent.sdkBackend.tools))
 	}
 
 	names := make(map[string]bool)
@@ -585,7 +585,7 @@ func TestRegisterTools_RegistersThreeTools(t *testing.T) {
 		}
 	}
 
-	for _, expected := range []string{"read_file", "validate_spec", "generate_phase_docs"} {
+	for _, expected := range []string{"read_file", "validate_spec", "generate_phase_docs", "generate_single_phase"} {
 		if !names[expected] {
 			t.Errorf("missing tool: %s", expected)
 		}
@@ -666,6 +666,124 @@ func TestSecurePath_Escaping(t *testing.T) {
 	_, err := securePath(root, "../../../etc/passwd")
 	if err == nil {
 		t.Error("expected error for path traversal")
+	}
+}
+
+// --- generate_single_phase tests ---
+
+func TestGenerateSinglePhase_WritesFiles(t *testing.T) {
+	root := t.TempDir()
+	tool := &generateSinglePhaseTool{root: root}
+
+	input, _ := json.Marshal(phaseInput{
+		ID:            "1A",
+		SpecContent:   validSpec,
+		PromptContent: validPromptDoc,
+	})
+
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	specPath := filepath.Join(root, "docs", "phases", "PHASE1A.md")
+	promptPath := filepath.Join(root, "docs", "phases", "PHASE1A-PROMPT.md")
+
+	specData, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("spec file not created: %v", err)
+	}
+	if string(specData) != validSpec {
+		t.Error("spec content mismatch")
+	}
+
+	promptData, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("prompt file not created: %v", err)
+	}
+	if string(promptData) != validPromptDoc {
+		t.Error("prompt content mismatch")
+	}
+
+	if !strings.Contains(result, "PHASE1A.md") {
+		t.Errorf("result should mention PHASE1A.md, got: %s", result)
+	}
+	if !strings.Contains(result, "PHASE1A-PROMPT.md") {
+		t.Errorf("result should mention PHASE1A-PROMPT.md, got: %s", result)
+	}
+}
+
+func TestGenerateSinglePhase_ValidationWarnings(t *testing.T) {
+	root := t.TempDir()
+	tool := &generateSinglePhaseTool{root: root}
+
+	input, _ := json.Marshal(phaseInput{
+		ID:            "2A",
+		SpecContent:   "# Phase 2A: Bad\n\n## Status\nPending\n",
+		PromptContent: validPromptDoc,
+	})
+
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// Files should still be written.
+	specPath := filepath.Join(root, "docs", "phases", "PHASE2A.md")
+	if _, err := os.Stat(specPath); err != nil {
+		t.Errorf("spec file should be written despite warnings: %v", err)
+	}
+
+	if !strings.Contains(result, "Validation warnings") {
+		t.Errorf("expected validation warnings, got: %s", result)
+	}
+}
+
+func TestGenerateSinglePhase_EmptyID(t *testing.T) {
+	tool := &generateSinglePhaseTool{root: t.TempDir()}
+	input, _ := json.Marshal(phaseInput{ID: "", SpecContent: "x", PromptContent: "y"})
+
+	_, err := tool.Execute(context.Background(), input)
+	if err == nil {
+		t.Error("expected error for empty phase ID")
+	}
+}
+
+func TestGenerateSinglePhase_CreatesDirectory(t *testing.T) {
+	root := t.TempDir()
+	phasesDir := filepath.Join(root, "docs", "phases")
+	if _, err := os.Stat(phasesDir); err == nil {
+		t.Fatal("docs/phases should not exist before test")
+	}
+
+	tool := &generateSinglePhaseTool{root: root}
+	input, _ := json.Marshal(phaseInput{ID: "1A", SpecContent: validSpec, PromptContent: validPromptDoc})
+
+	_, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if _, err := os.Stat(phasesDir); err != nil {
+		t.Errorf("docs/phases directory should be created: %v", err)
+	}
+}
+
+func TestExecuteTool_DispatchesSinglePhase(t *testing.T) {
+	root := t.TempDir()
+	input, _ := json.Marshal(phaseInput{ID: "3A", SpecContent: validSpec, PromptContent: validPromptDoc})
+
+	result, isError := ExecuteTool(context.Background(), root, "generate_single_phase", input)
+	if isError {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	if !strings.Contains(result, "Phase 3A written") {
+		t.Errorf("result should confirm phase 3A, got: %s", result)
+	}
+
+	specPath := filepath.Join(root, "docs", "phases", "PHASE3A.md")
+	if _, err := os.Stat(specPath); err != nil {
+		t.Errorf("spec file should exist: %v", err)
 	}
 }
 

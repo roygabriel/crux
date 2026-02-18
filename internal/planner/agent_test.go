@@ -61,6 +61,59 @@ func testPreferences() *prefs.Preferences {
 	}
 }
 
+func TestMaxOutputTokens_ExplicitOverride(t *testing.T) {
+	got := maxOutputTokens("claude-sonnet-4-5-20250929", 8000)
+	if got != 8000 {
+		t.Errorf("maxOutputTokens with explicit override = %d, want 8000", got)
+	}
+}
+
+func TestMaxOutputTokens_ModelLookup(t *testing.T) {
+	tests := []struct {
+		model string
+		want  int
+	}{
+		{"claude-sonnet-4-5-20250929", 16384},
+		{"claude-opus-4-20250929", 32768},
+		{"claude-haiku-4-5-20250929", 16384},
+	}
+	for _, tc := range tests {
+		t.Run(tc.model, func(t *testing.T) {
+			got := maxOutputTokens(tc.model, 0)
+			if got != tc.want {
+				t.Errorf("maxOutputTokens(%q, 0) = %d, want %d", tc.model, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMaxOutputTokens_UnknownModel(t *testing.T) {
+	got := maxOutputTokens("claude-mystery-99", 0)
+	if got != defaultFallbackMaxTokens {
+		t.Errorf("maxOutputTokens for unknown model = %d, want %d", got, defaultFallbackMaxTokens)
+	}
+}
+
+func TestMaxOutputTokens_PrefixMatching(t *testing.T) {
+	tests := []struct {
+		model string
+		want  int
+	}{
+		{"claude-opus-4", 32768},
+		{"claude-opus-4-20260101", 32768},
+		{"claude-sonnet-4-5", 16384},
+		{"claude-sonnet-4-5-latest", 16384},
+	}
+	for _, tc := range tests {
+		t.Run(tc.model, func(t *testing.T) {
+			got := maxOutputTokens(tc.model, 0)
+			if got != tc.want {
+				t.Errorf("maxOutputTokens(%q, 0) = %d, want %d", tc.model, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestNewAgent_ValidConstruction(t *testing.T) {
 	agent, err := NewAgent("test-key", "", testProjectContext(), testPreferences(), nil, 0)
 	if err != nil {

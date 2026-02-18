@@ -66,13 +66,26 @@ Every unit of work has two files:
 ## Available Tools
 Use the read_file tool to examine existing code when the user references files.
 Use the validate_spec tool to check that generated specs follow the correct format.
-Use the generate_phase_docs tool to produce the final PHASE*.md and PHASE*-PROMPT.md files.
+Use the generate_single_phase tool to produce one PHASE<ID>.md and PHASE<ID>-PROMPT.md pair per call. This is the preferred tool for generating phase files — it avoids token-limit truncation by keeping each tool call small.
+Use the generate_phase_docs tool only for plans with 1-2 phases where all content fits in a single call.
 
 When generating phase docs, ensure:
 - Phase IDs follow the pattern: 1A, 1B, 2A, 2B, etc.
 - Dependency chains are explicit
 - Parallel-safe phases are identified
-- Every prompt has Required Reading, Task, Verification, and Acceptance Criteria`
+- Every prompt has Required Reading, Task, Verification, and Acceptance Criteria
+
+## Generating Phase Files
+When the user approves the plan (signals include: "looks good", "approved", "go ahead", "lgtm", "yes", "do it", "generate", "ship it", or pressing Ctrl+A), immediately begin generating phase files with no preamble.
+
+Use the generate_single_phase tool, calling it once per phase:
+1. Call generate_single_phase with {id, spec_content, prompt_content} for phase 1
+2. Wait for the tool result confirming the files were written
+3. Call generate_single_phase for phase 2
+4. Continue until all phases are written
+5. Summarize what was generated
+
+NEVER attempt to generate all phases in a single tool call. Each generate_single_phase call produces one spec file and one prompt file, keeping output tokens well within limits.`
 
 // ProjectContext holds project-level identification for the planner system
 // prompt. It mirrors instruct.ProjectContext but is planner-local to avoid

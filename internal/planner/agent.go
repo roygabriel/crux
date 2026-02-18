@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -16,6 +17,9 @@ const DefaultModel = "claude-sonnet-4-5-20250929"
 
 // defaultMaxTokens is the fallback output token limit when none is configured.
 const defaultMaxTokens = 16384
+
+// streamTimeout is the maximum duration for a streaming API response.
+const streamTimeout = 120 * time.Second
 
 // Message is a display-friendly representation of a conversation turn.
 type Message struct {
@@ -154,6 +158,8 @@ func (a *Agent) stream(ctx context.Context) (<-chan StreamChunk, error) {
 		maxTok = defaultMaxTokens
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, streamTimeout)
+
 	params := anthropic.MessageNewParams{
 		Model:     a.model,
 		MaxTokens: int64(maxTok),
@@ -170,6 +176,7 @@ func (a *Agent) stream(ctx context.Context) (<-chan StreamChunk, error) {
 
 	ch := make(chan StreamChunk, 64)
 	go func() {
+		defer cancel()
 		defer close(ch)
 		defer s.Close()
 

@@ -543,6 +543,11 @@ func TestFormatAPIError(t *testing.T) {
 		contains string
 	}{
 		{
+			name:     "context_canceled",
+			err:      errors.New("stream: context canceled"),
+			contains: "interrupted",
+		},
+		{
 			name:     "timeout",
 			err:      errors.New("context deadline exceeded"),
 			contains: "timed out",

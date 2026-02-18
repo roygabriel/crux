@@ -26,9 +26,6 @@ var (
 // Minimum debounce interval for glamour re-renders during streaming.
 const glamourDebounce = 200 * time.Millisecond
 
-// streamTimeout is the maximum time to wait for an API response before cancelling.
-const streamTimeout = 120 * time.Second
-
 // chatMessage represents a single message in the conversation display.
 type chatMessage struct {
 	role     string // "user", "assistant", "tool"
@@ -289,9 +286,7 @@ func (m *TUIModel) sendMessageCmd(text string) tea.Cmd {
 
 	agent := m.agent
 	sendCmd := func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), streamTimeout)
-		defer cancel()
-		ch, err := agent.SendMessage(ctx, text)
+		ch, err := agent.SendMessage(context.Background(), text)
 		if err != nil {
 			return StreamErrMsg{Err: err}
 		}
@@ -346,9 +341,7 @@ func (m *TUIModel) handleToolResultCmd(msg ToolResultMsg) tea.Cmd {
 	m.streamBuf.Reset()
 	agent := m.agent
 	sendCmd := func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), streamTimeout)
-		defer cancel()
-		ch, err := agent.HandleToolResult(ctx, msg.ToolID, msg.Result, msg.IsError)
+		ch, err := agent.HandleToolResult(context.Background(), msg.ToolID, msg.Result, msg.IsError)
 		if err != nil {
 			return StreamErrMsg{Err: err}
 		}
@@ -474,6 +467,8 @@ func formatAPIError(err error) string {
 
 	lower := strings.ToLower(msg)
 	switch {
+	case strings.Contains(lower, "context canceled"):
+		friendly = "Request was interrupted."
 	case strings.Contains(lower, "context deadline exceeded"):
 		friendly = "Request timed out — the API did not respond in time."
 	case strings.Contains(lower, "401") || strings.Contains(lower, "unauthorized"):

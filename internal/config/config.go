@@ -109,7 +109,8 @@ type SecurityConfig struct {
 // PlannerConfig configures the planning agent.
 type PlannerConfig struct {
 	// MaxTokens is the maximum output tokens for planner API calls.
-	// Zero means use the default (16384).
+	// Zero means use the default (16384) with graceful truncation handling.
+	// Set an explicit value to enforce a hard limit.
 	MaxTokens int `yaml:"max_tokens" json:"max_tokens,omitempty"`
 }
 

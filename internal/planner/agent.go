@@ -220,10 +220,16 @@ func (a *Agent) stream(ctx context.Context) (<-chan StreamChunk, error) {
 		}
 
 		if msg.StopReason == anthropic.StopReasonMaxTokens {
-			ch <- StreamChunk{
-				Err: fmt.Errorf("response truncated: max_tokens (%d) reached — increase planner.max_tokens in config or set CRUX_PLANNER_MAX_TOKENS", maxTok),
+			if a.maxTokens > 0 {
+				// User explicitly configured a limit; treat truncation as an error.
+				ch <- StreamChunk{
+					Err: fmt.Errorf("response truncated: max_tokens (%d) reached — increase planner.max_tokens in config or set CRUX_PLANNER_MAX_TOKENS", maxTok),
+				}
+				return
 			}
-			return
+			// No explicit limit — complete gracefully with a note.
+			a.logger.Warn("response reached default max_tokens, completing gracefully", "max_tokens", maxTok)
+			ch <- StreamChunk{Text: "\n\n---\n*[Response reached token limit. Send a follow-up message to continue.]*\n"}
 		}
 
 		ch <- StreamChunk{Done: true}

@@ -317,6 +317,7 @@ func runWithTUI(
 				Permission:     string(inst.Agent.Permission),
 				Decisions:      decisions,
 				WorkNotesInfo:  workNotesInfo,
+				PaneContent:    orch.LatestContent(inst.Agent.ID),
 			})
 		}
 

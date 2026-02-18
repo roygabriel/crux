@@ -513,6 +513,12 @@ func (o *Orchestrator) latestContent(id types.AgentID) string {
 	return o.paneContent[id]
 }
 
+// LatestContent returns the most recently captured pane content for an agent.
+// This is the exported variant for use by the TUI.
+func (o *Orchestrator) LatestContent(id types.AgentID) string {
+	return o.latestContent(id)
+}
+
 // saveSession persists the current session state to disk.
 func (o *Orchestrator) saveSession() {
 	if o.session == nil {

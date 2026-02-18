@@ -11,18 +11,19 @@ import (
 
 // AgentSnapshot is a point-in-time view of a single agent for display.
 type AgentSnapshot struct {
-	ID             types.AgentID    `json:"id"`
-	Name           string           `json:"name"`
-	Plugin         string           `json:"plugin"`
-	Role           types.AgentRole  `json:"role"`
+	ID             types.AgentID     `json:"id"`
+	Name           string            `json:"name"`
+	Plugin         string            `json:"plugin"`
+	Role           types.AgentRole   `json:"role"`
 	Status         types.AgentStatus `json:"status"`
-	PromptDisplay  string           `json:"prompt_display"`
-	Task           string           `json:"task"`
-	CommandsPerMin int              `json:"commands_per_min"`
-	FilesSession   int              `json:"files_session"`
-	Permission     string           `json:"permission"`
-	Decisions      []string         `json:"decisions"`
-	WorkNotesInfo  string           `json:"work_notes_info"`
+	PromptDisplay  string            `json:"prompt_display"`
+	Task           string            `json:"task"`
+	CommandsPerMin int               `json:"commands_per_min"`
+	FilesSession   int               `json:"files_session"`
+	Permission     string            `json:"permission"`
+	Decisions      []string          `json:"decisions"`
+	WorkNotesInfo  string            `json:"work_notes_info"`
+	PaneContent    string            `json:"pane_content"`
 }
 
 // StateUpdate is a complete snapshot of orchestration state for the TUI.

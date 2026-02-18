@@ -8,12 +8,15 @@ project:
   state_dir: ".crux"
 
 agents: {}
-  # example:
+  # Example:
   #   engineer-1:
   #     plugin: claude
   #     role: engineer
   #     permission: standard
-  #     model: ""
+  #   reviewer-1:
+  #     plugin: claude
+  #     role: reviewer
+  #     permission: readonly
 
 memory:
   sqlite_path: ".crux/memory.db"

@@ -1,0 +1,26 @@
+project:
+  name: "http-api-example"
+  root: "."
+  state_dir: ".crux"
+
+agents:
+  engineer-1:
+    plugin: claude
+    role: engineer
+    permission: standard
+  reviewer-1:
+    plugin: claude
+    role: reviewer
+    permission: readonly
+
+memory:
+  sqlite_path: ".crux/memory.db"
+  vector_dir: ".crux/vectors"
+
+phases:
+  spec_dir: "docs/phases"
+
+security:
+  audit_log: ".crux/audit.log"
+  max_cmds_per_min: 60
+  max_files_per_session: 100

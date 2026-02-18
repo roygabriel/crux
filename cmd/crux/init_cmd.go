@@ -2,14 +2,19 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/roygabriel/crux/internal/examples"
 	"github.com/spf13/cobra"
 )
 
-var forceFlag bool
+var (
+	forceFlag   bool
+	exampleFlag bool
+)
 
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -20,6 +25,7 @@ var initCmd = &cobra.Command{
 
 func init() {
 	initCmd.Flags().BoolVar(&forceFlag, "force", false, "Overwrite template files (never overwrites config)")
+	initCmd.Flags().BoolVar(&exampleFlag, "example", false, "Seed project with HTTP API example")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -84,6 +90,23 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("\u2713 Updated .gitignore (added %d entries)\n", added)
 	} else {
 		fmt.Printf("\u2022 .gitignore already up to date\n")
+	}
+
+	if exampleFlag {
+		exFS, err := examples.HTTPAPIFS()
+		if err != nil {
+			return fmt.Errorf("load example: %w", err)
+		}
+		exCreated, exSkipped, err := writeEmbeddedFS(exFS, ".", forceFlag)
+		if err != nil {
+			return fmt.Errorf("write example: %w", err)
+		}
+		for _, name := range exCreated {
+			fmt.Printf("\u2713 Created %s\n", name)
+		}
+		for _, name := range exSkipped {
+			fmt.Printf("\u2022 Skipped %s (exists)\n", name)
+		}
 	}
 
 	return nil
@@ -202,4 +225,44 @@ func gitignoreContains(content, entry string) bool {
 		}
 	}
 	return false
+}
+
+// writeEmbeddedFS walks an fs.FS and writes all files to dstDir.
+// Directories are created as needed. Existing files are skipped unless
+// force is true. Returns lists of created and skipped relative paths.
+func writeEmbeddedFS(fsys fs.FS, dstDir string, force bool) (created, skipped []string, err error) {
+	err = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		dstPath := filepath.Join(dstDir, path)
+
+		if d.IsDir() {
+			return os.MkdirAll(dstPath, 0o755)
+		}
+
+		if !force {
+			if _, statErr := os.Stat(dstPath); statErr == nil {
+				skipped = append(skipped, path)
+				return nil
+			}
+		}
+
+		if mkErr := os.MkdirAll(filepath.Dir(dstPath), 0o755); mkErr != nil {
+			return fmt.Errorf("create parent dir for %s: %w", path, mkErr)
+		}
+
+		data, readErr := fs.ReadFile(fsys, path)
+		if readErr != nil {
+			return fmt.Errorf("read embedded %s: %w", path, readErr)
+		}
+
+		if writeErr := os.WriteFile(dstPath, data, 0o644); writeErr != nil {
+			return fmt.Errorf("write %s: %w", path, writeErr)
+		}
+		created = append(created, path)
+		return nil
+	})
+	return created, skipped, err
 }

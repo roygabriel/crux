@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func TestEnsureGitignoreEntries_AddsMissing(t *testing.T) {
@@ -286,5 +287,111 @@ func TestCopyTemplates_SkipsSubdirectories(t *testing.T) {
 	}
 	if len(created) != 1 {
 		t.Errorf("created = %v, want 1 item (subdirs should be skipped)", created)
+	}
+}
+
+func TestWriteEmbeddedFS_CreatesFiles(t *testing.T) {
+	dstDir := t.TempDir()
+	fsys := fstest.MapFS{
+		"README.md":        {Data: []byte("# Example")},
+		"config.yaml":      {Data: []byte("project: test")},
+		"docs/phases/P.md": {Data: []byte("# Phase")},
+	}
+
+	created, skipped, err := writeEmbeddedFS(fsys, dstDir, false)
+	if err != nil {
+		t.Fatalf("writeEmbeddedFS: %v", err)
+	}
+	if len(created) != 3 {
+		t.Errorf("created = %d, want 3", len(created))
+	}
+	if len(skipped) != 0 {
+		t.Errorf("skipped = %d, want 0", len(skipped))
+	}
+
+	for _, name := range []string{"README.md", "config.yaml", "docs/phases/P.md"} {
+		if _, err := os.Stat(filepath.Join(dstDir, name)); err != nil {
+			t.Errorf("file %s not created: %v", name, err)
+		}
+	}
+}
+
+func TestWriteEmbeddedFS_SkipsExisting(t *testing.T) {
+	dstDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dstDir, "README.md"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fsys := fstest.MapFS{
+		"README.md":   {Data: []byte("new")},
+		"config.yaml": {Data: []byte("project: test")},
+	}
+
+	created, skipped, err := writeEmbeddedFS(fsys, dstDir, false)
+	if err != nil {
+		t.Fatalf("writeEmbeddedFS: %v", err)
+	}
+	if len(created) != 1 {
+		t.Errorf("created = %d, want 1", len(created))
+	}
+	if len(skipped) != 1 {
+		t.Errorf("skipped = %d, want 1", len(skipped))
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dstDir, "README.md"))
+	if string(data) != "old" {
+		t.Errorf("README.md content = %q, want %q (should not be overwritten)", string(data), "old")
+	}
+}
+
+func TestWriteEmbeddedFS_ForceOverwrites(t *testing.T) {
+	dstDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dstDir, "README.md"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fsys := fstest.MapFS{
+		"README.md": {Data: []byte("new")},
+	}
+
+	created, skipped, err := writeEmbeddedFS(fsys, dstDir, true)
+	if err != nil {
+		t.Fatalf("writeEmbeddedFS: %v", err)
+	}
+	if len(created) != 1 {
+		t.Errorf("created = %d, want 1", len(created))
+	}
+	if len(skipped) != 0 {
+		t.Errorf("skipped = %d, want 0", len(skipped))
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dstDir, "README.md"))
+	if string(data) != "new" {
+		t.Errorf("README.md content = %q, want %q (should be overwritten)", string(data), "new")
+	}
+}
+
+func TestWriteEmbeddedFS_CreatesSubdirs(t *testing.T) {
+	dstDir := t.TempDir()
+	fsys := fstest.MapFS{
+		"a/b/c/file.txt": {Data: []byte("deep")},
+	}
+
+	created, _, err := writeEmbeddedFS(fsys, dstDir, false)
+	if err != nil {
+		t.Fatalf("writeEmbeddedFS: %v", err)
+	}
+	if len(created) != 1 {
+		t.Errorf("created = %d, want 1", len(created))
+	}
+
+	data, err := os.ReadFile(filepath.Join(dstDir, "a", "b", "c", "file.txt"))
+	if err != nil {
+		t.Fatalf("nested file not created: %v", err)
+	}
+	if string(data) != "deep" {
+		t.Errorf("content = %q, want %q", string(data), "deep")
 	}
 }

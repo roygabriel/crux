@@ -40,7 +40,7 @@ func TestHelpOverlay_ViewContainsKeyBindings(t *testing.T) {
 	h := HelpOverlay{visible: true, width: 80, height: 40}
 	view := h.View()
 
-	keys := []string{"q", "tab", "enter", "?", "esc", "f"}
+	keys := []string{"q", "tab", "1/2/3", "?", "m", "f"}
 	for _, k := range keys {
 		if !strings.Contains(view, k) {
 			t.Errorf("View should contain key %q", k)
@@ -52,7 +52,7 @@ func TestHelpOverlay_ViewContainsSectionHeaders(t *testing.T) {
 	h := HelpOverlay{visible: true, width: 80, height: 40}
 	view := h.View()
 
-	headers := []string{"Global", "Agents Panel", "Logs Panel", "Detail Panel"}
+	headers := []string{"Global", "Sidebar", "Content Panel", "Logs Panel"}
 	for _, hdr := range headers {
 		if !strings.Contains(view, hdr) {
 			t.Errorf("View should contain section %q", hdr)

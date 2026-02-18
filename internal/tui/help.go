@@ -68,17 +68,25 @@ func (h *HelpOverlay) View() string {
 			keys: [][2]string{
 				{"q", "Quit"},
 				{"?", "Toggle help"},
-				{"tab", "Switch panel"},
+				{"tab", "Cycle panel focus"},
 			},
 		},
 		{
-			title: "Agents Panel",
+			title: "Sidebar",
 			keys: [][2]string{
 				{"j/k", "Move cursor"},
-				{"enter", "Open detail"},
 				{"p", "Pause agent"},
 				{"r", "Resume agent"},
 				{"x", "Kill agent"},
+			},
+		},
+		{
+			title: "Content Panel",
+			keys: [][2]string{
+				{"1/2/3", "Switch tab"},
+				{"j/k", "Scroll up/down"},
+				{"pgup/pgdn", "Scroll page"},
+				{"m", "Send message"},
 			},
 		},
 		{
@@ -87,13 +95,6 @@ func (h *HelpOverlay) View() string {
 				{"j/k", "Scroll up/down"},
 				{"pgup/pgdn", "Scroll page"},
 				{"f", "Filter logs"},
-			},
-		},
-		{
-			title: "Detail Panel",
-			keys: [][2]string{
-				{"esc", "Close detail"},
-				{"m", "Send message"},
 			},
 		},
 	}

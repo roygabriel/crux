@@ -628,27 +628,23 @@ func TestAgent_SendMessage_MaxTokensTruncation(t *testing.T) {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
-	var gotTruncNote bool
-	var gotDone bool
+	var gotTruncated bool
 	for chunk := range ch {
 		if chunk.Err != nil {
 			t.Fatalf("unexpected error: %v", chunk.Err)
 		}
-		if strings.Contains(chunk.Text, "token limit") {
-			gotTruncNote = true
+		if chunk.Truncated {
+			gotTruncated = true
 		}
 		if chunk.Done {
-			gotDone = true
+			t.Error("truncated response should not emit Done chunk")
 		}
 		if chunk.ToolUse != nil {
 			t.Error("truncated response should not emit tool_use chunks")
 		}
 	}
-	if !gotTruncNote {
-		t.Error("expected truncation note in stream")
-	}
-	if !gotDone {
-		t.Error("expected Done chunk")
+	if !gotTruncated {
+		t.Error("expected Truncated chunk")
 	}
 
 	// Verify history has only text blocks (no tool_use).

@@ -26,6 +26,10 @@ var (
 // Minimum debounce interval for glamour re-renders during streaming.
 const glamourDebounce = 200 * time.Millisecond
 
+// maxAutoContinues is the maximum number of transparent auto-continue attempts
+// per user-initiated turn when the default max_tokens limit truncates a response.
+const maxAutoContinues = 3
+
 // chatMessage represents a single message in the conversation display.
 type chatMessage struct {
 	role     string // "user", "assistant", "tool"
@@ -37,6 +41,10 @@ type chatMessage struct {
 
 // StreamDoneMsg signals that a streaming response has completed.
 type StreamDoneMsg struct{}
+
+// StreamTruncatedMsg signals that the response was truncated by the default
+// max_tokens limit and may be auto-continued.
+type StreamTruncatedMsg struct{}
 
 // StreamErrMsg signals a streaming error.
 type StreamErrMsg struct {
@@ -65,11 +73,12 @@ type TUIModel struct {
 	agent       *Agent
 	projectRoot string
 
-	messages    []chatMessage
-	streaming   bool
-	streamBuf   *strings.Builder
-	phaseCount  int
-	initialMsg  string
+	messages      []chatMessage
+	streaming     bool
+	streamBuf     *strings.Builder
+	phaseCount    int
+	continueCount int
+	initialMsg    string
 
 	viewport viewport.Model
 	input    textarea.Model
@@ -175,6 +184,33 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		cmds = append(cmds, m.input.Focus())
 
+	case StreamTruncatedMsg:
+		// Finalize partial response as an assistant message.
+		raw := m.streamBuf.String()
+		m.streamBuf.Reset()
+		if raw != "" {
+			rendered := m.renderMarkdown(raw)
+			m.messages = append(m.messages, chatMessage{
+				role:     "assistant",
+				content:  raw,
+				rendered: rendered,
+			})
+		}
+
+		if m.continueCount < maxAutoContinues {
+			m.continueCount++
+			m.refreshViewport()
+			cmds = append(cmds, m.autoContinueCmd())
+		} else {
+			m.streaming = false
+			m.messages = append(m.messages, chatMessage{
+				role:    "assistant",
+				content: "\n\n---\n*[Response reached token limit. Send a follow-up message to continue.]*\n",
+			})
+			m.refreshViewport()
+			cmds = append(cmds, m.input.Focus())
+		}
+
 	case StreamErrMsg:
 		m.streaming = false
 		m.streamBuf.Reset()
@@ -242,6 +278,7 @@ func (m TUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.streamBuf.Reset()
 		m.phaseCount = 0
+		m.continueCount = 0
 		m.err = nil
 		m.refreshViewport()
 		return m, m.input.Focus()
@@ -280,6 +317,7 @@ func (m *TUIModel) sendMessageCmd(text string) tea.Cmd {
 	m.messages = append(m.messages, chatMessage{role: "user", content: text})
 	m.streaming = true
 	m.streamBuf.Reset()
+	m.continueCount = 0
 	m.err = nil
 	m.input.Blur()
 	m.refreshViewport()
@@ -304,6 +342,9 @@ func readStreamMsg(ch <-chan StreamChunk) tea.Msg {
 	}
 	if chunk.Err != nil {
 		return StreamErrMsg{Err: chunk.Err}
+	}
+	if chunk.Truncated {
+		return StreamTruncatedMsg{}
 	}
 	if chunk.ToolUse != nil {
 		return ToolUseMsg{Chunk: *chunk.ToolUse}
@@ -339,9 +380,26 @@ func (m *TUIModel) executeToolCmd(chunk ToolUseChunk) tea.Cmd {
 func (m *TUIModel) handleToolResultCmd(msg ToolResultMsg) tea.Cmd {
 	m.streaming = true
 	m.streamBuf.Reset()
+	m.continueCount = 0
 	agent := m.agent
 	sendCmd := func() tea.Msg {
 		ch, err := agent.HandleToolResult(context.Background(), msg.ToolID, msg.Result, msg.IsError)
+		if err != nil {
+			return StreamErrMsg{Err: err}
+		}
+		return readStreamMsg(ch)
+	}
+	return tea.Batch(sendCmd, m.spinner.Tick)
+}
+
+// autoContinueCmd sends an invisible follow-up message to resume a truncated
+// response. It does not append a visible user message to m.messages.
+func (m *TUIModel) autoContinueCmd() tea.Cmd {
+	m.streaming = true
+	m.streamBuf.Reset()
+	agent := m.agent
+	sendCmd := func() tea.Msg {
+		ch, err := agent.SendMessage(context.Background(), "Continue from where you left off.")
 		if err != nil {
 			return StreamErrMsg{Err: err}
 		}

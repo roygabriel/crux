@@ -619,3 +619,98 @@ func TestTUIModel_StreamErrAppendsMessage(t *testing.T) {
 		t.Errorf("error message should contain raw error, got: %q", model.messages[0].content)
 	}
 }
+
+func TestTUIModel_StreamTruncated_AutoContinues(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.streaming = true
+	m.streamBuf.WriteString("partial response")
+
+	updated, cmd := m.Update(StreamTruncatedMsg{})
+	model := updated.(TUIModel)
+
+	// Partial response should be finalized as an assistant message.
+	if len(model.messages) != 1 {
+		t.Fatalf("expected 1 message (assistant), got %d", len(model.messages))
+	}
+	if model.messages[0].role != "assistant" {
+		t.Errorf("message role = %q, want 'assistant'", model.messages[0].role)
+	}
+	if model.messages[0].content != "partial response" {
+		t.Errorf("content = %q, want 'partial response'", model.messages[0].content)
+	}
+
+	// Should still be streaming (auto-continue in progress).
+	if !model.streaming {
+		t.Error("streaming should remain true during auto-continue")
+	}
+
+	// Continue count should be incremented.
+	if model.continueCount != 1 {
+		t.Errorf("continueCount = %d, want 1", model.continueCount)
+	}
+
+	// Should return a cmd (auto-continue).
+	if cmd == nil {
+		t.Error("expected a cmd for auto-continue")
+	}
+}
+
+func TestTUIModel_StreamTruncated_ExhaustsLimit(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.streaming = true
+	m.continueCount = maxAutoContinues // Already at the limit.
+	m.streamBuf.WriteString("final partial")
+
+	updated, _ := m.Update(StreamTruncatedMsg{})
+	model := updated.(TUIModel)
+
+	// Streaming should stop.
+	if model.streaming {
+		t.Error("streaming should be false after exhausting auto-continues")
+	}
+
+	// Should have assistant message + truncation note.
+	if len(model.messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(model.messages))
+	}
+	if model.messages[0].role != "assistant" {
+		t.Errorf("messages[0].role = %q, want 'assistant'", model.messages[0].role)
+	}
+	if !strings.Contains(model.messages[1].content, "token limit") {
+		t.Errorf("expected truncation note, got: %q", model.messages[1].content)
+	}
+}
+
+func TestTUIModel_ContinueCount_ResetsOnUserMessage(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.continueCount = 2
+
+	// sendMessageCmd resets the counter.
+	m.sendMessageCmd("hello")
+
+	if m.continueCount != 0 {
+		t.Errorf("continueCount = %d, want 0 after sendMessageCmd", m.continueCount)
+	}
+}
+
+func TestTUIModel_ContinueCount_ResetsOnReset(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.continueCount = 2
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	model := updated.(TUIModel)
+
+	if model.continueCount != 0 {
+		t.Errorf("continueCount = %d, want 0 after Ctrl+R", model.continueCount)
+	}
+}
+
+func TestReadStreamMsg_Truncated(t *testing.T) {
+	ch := make(chan StreamChunk, 1)
+	ch <- StreamChunk{Truncated: true}
+
+	msg := readStreamMsg(ch)
+	if _, ok := msg.(StreamTruncatedMsg); !ok {
+		t.Errorf("expected StreamTruncatedMsg, got %T", msg)
+	}
+}

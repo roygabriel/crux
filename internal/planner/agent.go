@@ -41,6 +41,9 @@ type StreamChunk struct {
 	ToolUse *ToolUseChunk
 	// Done indicates the stream has finished.
 	Done bool
+	// Truncated indicates the response was cut short by the default max_tokens
+	// limit (not user-configured). The TUI can auto-continue transparently.
+	Truncated bool
 	// Err is set if the stream encountered an error.
 	Err error
 }

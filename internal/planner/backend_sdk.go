@@ -172,9 +172,8 @@ func (b *SDKBackend) stream(ctx context.Context) (<-chan StreamChunk, error) {
 				}
 				return
 			}
-			b.logger.Warn("response reached default max_tokens, completing gracefully", "max_tokens", maxTok)
-			ch <- StreamChunk{Text: "\n\n---\n*[Response reached token limit. Send a follow-up message to continue.]*\n"}
-			ch <- StreamChunk{Done: true}
+			b.logger.Warn("response reached default max_tokens, signaling truncation", "max_tokens", maxTok)
+			ch <- StreamChunk{Truncated: true}
 			return
 		}
 

@@ -159,6 +159,21 @@ func (r *Renderer) RenderSection(name string, data InstructionData) (*RenderedSe
 	return r.renderOneSection(name, data)
 }
 
+// RenderTemplate executes a named template with the given data and returns
+// the rendered content. Unlike Render(), it does not apply section-based
+// budget enforcement.
+func (r *Renderer) RenderTemplate(name string, data InstructionData) (string, error) {
+	tmpl := r.templates.Lookup(name)
+	if tmpl == nil {
+		return "", fmt.Errorf("template %q not found", name)
+	}
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("executing template %q: %w", name, err)
+	}
+	return buf.String(), nil
+}
+
 func (r *Renderer) renderOneSection(name string, data InstructionData) (*RenderedSection, error) {
 	tmpl := r.templates.Lookup(name)
 	if tmpl == nil {

@@ -57,8 +57,21 @@ type AgentPlugin interface {
 	// captured after the agent finishes processing.
 	ParseOutput(paneContent string) (AgentOutput, error)
 
+	// DetectPrompt inspects pane content for interactive prompts that
+	// require a response (e.g. trust dialogs, permission approvals).
+	// If a prompt is detected, it returns the response to send and true.
+	DetectPrompt(paneContent string) (PromptResponse, bool)
+
 	// Capabilities returns the set of capabilities this plugin supports.
 	Capabilities() []Capability
+}
+
+// PromptResponse describes keys to send in response to an interactive prompt.
+type PromptResponse struct {
+	// Keys are the literal key names to send via tmux send-keys.
+	Keys []string `json:"keys"`
+	// Description is a human-readable label for the prompt being answered.
+	Description string `json:"description"`
 }
 
 // AgentConfig holds the runtime configuration passed to an agent plugin when

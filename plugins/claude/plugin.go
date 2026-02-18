@@ -16,6 +16,11 @@ const pluginName = "claude"
 // characters from a previous task should not trigger busy detection.
 const busyTailLines = 5
 
+// promptTailLines is the number of lines from the end of pane content
+// checked for interactive prompts. Only recent lines are checked to
+// avoid re-matching accepted prompts in scrollback.
+const promptTailLines = 10
+
 // Compile-time interface compliance check.
 var _ plugin.AgentPlugin = (*Plugin)(nil)
 
@@ -89,6 +94,30 @@ func (p *Plugin) DetectRateLimit(paneContent string) (time.Duration, bool) {
 		return 0, false
 	}
 	return parseRetryDuration(cleaned), true
+}
+
+// DetectPrompt inspects the tail of pane content for interactive
+// prompts such as project trust dialogs or permission approval requests.
+// Only the last promptTailLines are checked to avoid matching prompts
+// that were already accepted in scrollback.
+func (p *Plugin) DetectPrompt(paneContent string) (plugin.PromptResponse, bool) {
+	tail := stripANSI(lastLines(paneContent, promptTailLines))
+
+	if trustPromptRe.MatchString(tail) {
+		return plugin.PromptResponse{
+			Keys:        []string{"y", "Enter"},
+			Description: "project trust prompt",
+		}, true
+	}
+
+	if permissionPromptRe.MatchString(tail) {
+		return plugin.PromptResponse{
+			Keys:        []string{"y", "Enter"},
+			Description: "permission approval prompt",
+		}, true
+	}
+
+	return plugin.PromptResponse{}, false
 }
 
 // FormatMessage converts a Message into a text prompt suitable for

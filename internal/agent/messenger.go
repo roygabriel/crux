@@ -86,6 +86,26 @@ func (m *Messenger) Send(ctx context.Context, agentID types.AgentID, msg types.M
 	return nil
 }
 
+// SendRawKeys sends literal key presses to an agent's tmux pane without
+// the sanitization and auto-Enter that Send adds. Use this for responding
+// to interactive prompts (e.g. "y" + Enter for confirmation dialogs).
+func (m *Messenger) SendRawKeys(ctx context.Context, agentID types.AgentID, keys ...string) error {
+	inst, err := m.registry.Get(agentID)
+	if err != nil {
+		return fmt.Errorf("send raw keys to agent %q: %w", agentID, err)
+	}
+
+	if err := m.pm.SendKeysRaw(ctx, inst.Agent.PaneID, keys...); err != nil {
+		return fmt.Errorf("send raw keys to agent %q: %w", agentID, err)
+	}
+
+	m.logger.Info("sent raw keys to agent",
+		"agent_id", agentID,
+		"keys", keys,
+	)
+	return nil
+}
+
 // WaitForResponse polls the agent's tmux pane until the agent is no
 // longer busy or the timeout expires. It returns the captured pane
 // content when the agent finishes, or an error on timeout or context

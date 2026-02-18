@@ -35,6 +35,13 @@ var (
 	// fileChangedRe extracts file paths from modification notices in
 	// Claude Code output (e.g. "Created `path/file.go`").
 	fileChangedRe = regexp.MustCompile("(?mi)(?:Created|Updated|Modified|Wrote(?: to)?|Edited)\\s+`?([^\\s`'\"]+)`?")
+
+	// trustPromptRe matches Claude Code's project trust prompt.
+	trustPromptRe = regexp.MustCompile(`(?i)(?:trust\s+(?:the\s+(?:authors|files)|this\s+project)).*\?`)
+
+	// permissionPromptRe matches Claude Code's permission approval prompts
+	// (e.g. "Allow Edit file.go? (Y/n)").
+	permissionPromptRe = regexp.MustCompile(`(?i)(?:allow|approve|permit)\s+.+\?\s*\(?[Yy]/[Nn]\)?`)
 )
 
 // stripANSI removes ANSI escape sequences from s.

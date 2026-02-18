@@ -15,6 +15,7 @@ const (
 	ContentBusy      = "\u280b thinking..."
 	ContentError     = "Error: fatal"
 	ContentRateLimit = "rate-limit 429"
+	ContentPrompted  = "Do you want to trust the authors of the files in this folder?"
 )
 
 // ParseOutputFn is a custom function for overriding ParseOutput behavior.
@@ -76,6 +77,17 @@ func (p *ScenarioPlugin) DetectRateLimit(content string) (time.Duration, bool) {
 		return 30 * time.Second, true
 	}
 	return 0, false
+}
+
+// DetectPrompt returns a response when content matches the prompted sentinel.
+func (p *ScenarioPlugin) DetectPrompt(content string) (plugin.PromptResponse, bool) {
+	if strings.Contains(content, "trust the authors") {
+		return plugin.PromptResponse{
+			Keys:        []string{"y", "Enter"},
+			Description: "project trust prompt",
+		}, true
+	}
+	return plugin.PromptResponse{}, false
 }
 
 // FormatMessage returns an empty string (no-op for tests).

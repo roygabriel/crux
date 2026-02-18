@@ -1,6 +1,7 @@
 package claude_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -408,6 +409,84 @@ func TestParseOutput(t *testing.T) {
 			}
 			if tt.wantErrors > 0 && len(out.Errors) != tt.wantErrors {
 				t.Errorf("Errors count = %d, want %d: %v", len(out.Errors), tt.wantErrors, out.Errors)
+			}
+		})
+	}
+}
+
+func TestDetectPrompt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		paneContent string
+		wantPrompt  bool
+		wantDesc    string
+	}{
+		{
+			name:        "trust-prompt",
+			paneContent: "Welcome to Claude Code\nDo you want to trust the authors of the files in this folder?\n",
+			wantPrompt:  true,
+			wantDesc:    "project trust prompt",
+		},
+		{
+			name:        "trust-prompt-this-project",
+			paneContent: "Do you want to trust this project?\n",
+			wantPrompt:  true,
+			wantDesc:    "project trust prompt",
+		},
+		{
+			name:        "permission-allow-edit",
+			paneContent: "Working on task...\nAllow Edit file.go? (Y/n)\n",
+			wantPrompt:  true,
+			wantDesc:    "permission approval prompt",
+		},
+		{
+			name:        "permission-allow-read",
+			paneContent: "Allow Read main.go? (Y/n)\n",
+			wantPrompt:  true,
+			wantDesc:    "permission approval prompt",
+		},
+		{
+			name:        "ready-prompt-no-match",
+			paneContent: "some output\n>\n",
+			wantPrompt:  false,
+		},
+		{
+			name:        "spinner-no-match",
+			paneContent: "⠋ Thinking...\n",
+			wantPrompt:  false,
+		},
+		{
+			name:        "empty-no-match",
+			paneContent: "",
+			wantPrompt:  false,
+		},
+		{
+			name: "old-prompt-buried-in-scrollback",
+			paneContent: "Do you want to trust the authors of the files in this folder?\n" +
+				"y\n" +
+				strings.Repeat("Working on implementation...\n", 15) +
+				">\n",
+			wantPrompt: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, isPrompt := newPlugin().DetectPrompt(tt.paneContent)
+			if isPrompt != tt.wantPrompt {
+				t.Errorf("DetectPrompt() isPrompt = %v, want %v", isPrompt, tt.wantPrompt)
+			}
+			if isPrompt {
+				if resp.Description != tt.wantDesc {
+					t.Errorf("DetectPrompt() description = %q, want %q", resp.Description, tt.wantDesc)
+				}
+				if len(resp.Keys) == 0 {
+					t.Error("DetectPrompt() returned empty keys")
+				}
 			}
 		})
 	}

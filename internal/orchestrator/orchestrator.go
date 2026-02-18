@@ -328,6 +328,9 @@ func (o *Orchestrator) detectStatus(inst *agent.AgentInstance, content string) t
 	if _, isErr := inst.Plugin.DetectError(content); isErr {
 		return types.StatusError
 	}
+	if _, isPrompt := inst.Plugin.DetectPrompt(content); isPrompt {
+		return types.StatusPrompted
+	}
 	if inst.Plugin.DetectBusy(content) {
 		return types.StatusBusy
 	}
@@ -385,6 +388,15 @@ func (o *Orchestrator) handleTransition(
 		o.logger.Warn("agent rate limited", "agent_id", id, "retry_after", retryAfter)
 		o.worldState.UpdateAgent(id, AgentState{
 			Status:     types.StatusRateLimited,
+			LastActive: time.Now().UTC(),
+			PhaseID:    existing.PhaseID,
+			AssignedAt: existing.AssignedAt,
+		})
+
+	case types.StatusPrompted:
+		o.handlePromptResponse(ctx, inst, content)
+		o.worldState.UpdateAgent(id, AgentState{
+			Status:     types.StatusPrompted,
 			LastActive: time.Now().UTC(),
 			PhaseID:    existing.PhaseID,
 			AssignedAt: existing.AssignedAt,
@@ -464,6 +476,27 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 			"agent_id", id,
 			"phase", spec.ID,
 			"prompt", prompt.PromptNumber,
+		)
+	}
+}
+
+// handlePromptResponse detects the interactive prompt type from pane content
+// and sends the appropriate key sequence to auto-accept it.
+func (o *Orchestrator) handlePromptResponse(ctx context.Context, inst *agent.AgentInstance, content string) {
+	resp, ok := inst.Plugin.DetectPrompt(content)
+	if !ok {
+		return
+	}
+
+	o.logger.Info("auto-accepting interactive prompt",
+		"agent_id", inst.Agent.ID,
+		"prompt_type", resp.Description,
+	)
+
+	if err := o.messenger.SendRawKeys(ctx, inst.Agent.ID, resp.Keys...); err != nil {
+		o.logger.Error("failed to auto-accept prompt",
+			"agent_id", inst.Agent.ID,
+			"error", err,
 		)
 	}
 }

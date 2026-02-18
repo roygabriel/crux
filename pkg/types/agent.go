@@ -35,6 +35,8 @@ const (
 	StatusError AgentStatus = "error"
 	// StatusRateLimited means the agent hit an API rate limit.
 	StatusRateLimited AgentStatus = "rate-limited"
+	// StatusPrompted means the agent is waiting at an interactive prompt.
+	StatusPrompted AgentStatus = "prompted"
 	// StatusStopped means the agent has been explicitly stopped.
 	StatusStopped AgentStatus = "stopped"
 )

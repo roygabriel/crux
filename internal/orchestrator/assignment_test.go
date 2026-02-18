@@ -80,6 +80,7 @@ func (m *mockPlugin) DetectReady(_ string) bool                                 
 func (m *mockPlugin) DetectBusy(_ string) bool                                    { return false }
 func (m *mockPlugin) DetectError(_ string) (string, bool)                         { return "", false }
 func (m *mockPlugin) DetectRateLimit(_ string) (time.Duration, bool)              { return 0, false }
+func (m *mockPlugin) DetectPrompt(_ string) (plugin.PromptResponse, bool)         { return plugin.PromptResponse{}, false }
 func (m *mockPlugin) FormatMessage(_ types.Message) string                        { return "" }
 func (m *mockPlugin) ParseOutput(_ string) (plugin.AgentOutput, error)            { return plugin.AgentOutput{}, nil }
 func (m *mockPlugin) Capabilities() []plugin.Capability                           { return m.caps }

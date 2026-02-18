@@ -29,6 +29,10 @@ func (s *stubPlugin) DetectRateLimit(_ string) (time.Duration, bool) {
 	return 0, false
 }
 
+func (s *stubPlugin) DetectPrompt(_ string) (plugin.PromptResponse, bool) {
+	return plugin.PromptResponse{}, false
+}
+
 func (s *stubPlugin) FormatMessage(_ types.Message) string { return "" }
 
 func (s *stubPlugin) ParseOutput(_ string) (plugin.AgentOutput, error) {

@@ -171,6 +171,11 @@ func (p *Plugin) DetectRateLimit(paneContent string) (time.Duration, bool) {
 	return parseRetryDuration(cleaned), true
 }
 
+// DetectPrompt returns false; generic plugins do not detect interactive prompts.
+func (p *Plugin) DetectPrompt(_ string) (plugin.PromptResponse, bool) {
+	return plugin.PromptResponse{}, false
+}
+
 // FormatMessage converts a Message into a text prompt suitable for sending
 // to the generic agent via tmux send-keys.
 func (p *Plugin) FormatMessage(msg types.Message) string {

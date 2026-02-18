@@ -37,11 +37,12 @@ func (s *stubPlugin) LaunchCmd(cfg plugin.AgentConfig) (string, []string, error)
 	return "stubcli", []string{"--agent", string(cfg.ID)}, nil
 }
 
-func (s *stubPlugin) DetectReady(_ string) bool                          { return false }
-func (s *stubPlugin) DetectBusy(_ string) bool                           { return false }
-func (s *stubPlugin) DetectError(_ string) (string, bool)                { return "", false }
-func (s *stubPlugin) DetectRateLimit(_ string) (time.Duration, bool)     { return 0, false }
-func (s *stubPlugin) FormatMessage(_ types.Message) string               { return "" }
+func (s *stubPlugin) DetectReady(_ string) bool                              { return false }
+func (s *stubPlugin) DetectBusy(_ string) bool                               { return false }
+func (s *stubPlugin) DetectError(_ string) (string, bool)                    { return "", false }
+func (s *stubPlugin) DetectRateLimit(_ string) (time.Duration, bool)         { return 0, false }
+func (s *stubPlugin) DetectPrompt(_ string) (plugin.PromptResponse, bool)    { return plugin.PromptResponse{}, false }
+func (s *stubPlugin) FormatMessage(_ types.Message) string                   { return "" }
 func (s *stubPlugin) ParseOutput(_ string) (plugin.AgentOutput, error)   { return plugin.AgentOutput{}, nil }
 func (s *stubPlugin) Capabilities() []plugin.Capability                  { return nil }
 

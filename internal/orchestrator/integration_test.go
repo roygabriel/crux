@@ -277,6 +277,73 @@ func TestAgentErrorDetection(t *testing.T) {
 	}
 }
 
+// TestPromptAutoResponse verifies that when an agent pane shows an
+// interactive prompt, the orchestrator detects it, sends the auto-accept
+// keys, and the agent transitions through prompted → ready.
+func TestPromptAutoResponse(t *testing.T) {
+	h := testutil.NewTestHarness(t)
+
+	// Set default to prompted content so the watcher continues to see
+	// it after the script is exhausted (watcher polls faster than ticks).
+	h.Commander.SetDefaultContent(testutil.ContentPrompted)
+
+	// Agent starts, then shows a trust prompt.
+	h.Commander.AddScript("%1", []testutil.ResponseStep{
+		{Content: ""},
+		{Content: testutil.ContentPrompted},
+	})
+
+	orch, tickCh := h.BuildOrchestrator()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- orch.Run(ctx)
+	}()
+
+	testutil.WaitForNTicks(tickCh, 5, 15*time.Second)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run() did not return within 5s of cancellation")
+	}
+
+	// Verify send-keys was called with "y" to accept the prompt.
+	sendCalls := h.Commander.CallsForSubcommand("send-keys")
+	found := false
+	for _, c := range sendCalls {
+		for _, arg := range c.Args {
+			if arg == "y" {
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Error("expected send-keys call with 'y' for prompt auto-accept, none found")
+	}
+
+	// Verify world state shows agent in prompted status.
+	ws := orch.WorldState()
+	agentState, ok := ws.GetAgent("agent-1")
+	if !ok {
+		t.Fatal("agent-1 not found in world state")
+	}
+	if agentState.Status != types.StatusPrompted {
+		t.Errorf("agent status = %q, want %q", agentState.Status, types.StatusPrompted)
+	}
+}
+
 // TestAgentRateLimitDetection verifies that rate-limit sentinel content
 // is detected and reflected in the world state.
 func TestAgentRateLimitDetection(t *testing.T) {

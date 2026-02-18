@@ -7,10 +7,6 @@ const config = {
   tagline: 'Coordinate AI coding agents in tmux sessions with phase-based workflows, persistent memory, and verification gates.',
   favicon: 'img/favicon.svg',
 
-  future: {
-    v4: true,
-  },
-
   url: 'https://roygabriel.github.io',
   baseUrl: '/crux/',
 

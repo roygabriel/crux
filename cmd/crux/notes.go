@@ -20,10 +20,11 @@ var notesCmd = &cobra.Command{
 }
 
 var notesShowCmd = &cobra.Command{
-	Use:   "show <phase-id>",
-	Short: "Display work notes for a phase",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runNotesShow,
+	Use:               "show <phase-id>",
+	Short:             "Display work notes for a phase",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: phaseIDCompletion,
+	RunE:              runNotesShow,
 }
 
 var notesListCmd = &cobra.Command{
@@ -33,10 +34,11 @@ var notesListCmd = &cobra.Command{
 }
 
 var notesEditCmd = &cobra.Command{
-	Use:   "edit <phase-id>",
-	Short: "Open work notes in editor",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runNotesEdit,
+	Use:               "edit <phase-id>",
+	Short:             "Open work notes in editor",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: phaseIDCompletion,
+	RunE:              runNotesEdit,
 }
 
 func init() {

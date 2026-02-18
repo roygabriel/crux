@@ -37,10 +37,11 @@ var phaseListCmd = &cobra.Command{
 }
 
 var phaseShowCmd = &cobra.Command{
-	Use:   "show <id>",
-	Short: "Display full phase spec",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runPhaseShow,
+	Use:               "show <id>",
+	Short:             "Display full phase spec",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: phaseIDCompletion,
+	RunE:              runPhaseShow,
 }
 
 var phaseValidateCmd = &cobra.Command{
@@ -56,10 +57,11 @@ var phaseCreateCmd = &cobra.Command{
 }
 
 var phaseAdvanceCmd = &cobra.Command{
-	Use:   "advance <id>",
-	Short: "Force-advance a phase (skips gates)",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runPhaseAdvance,
+	Use:               "advance <id>",
+	Short:             "Force-advance a phase (skips gates)",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: phaseIDCompletion,
+	RunE:              runPhaseAdvance,
 }
 
 func init() {
@@ -499,4 +501,26 @@ func runPhaseAdvance(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Phase %s advanced.\n", id)
 	return nil
+}
+
+// phaseIDCompletion returns available phase IDs for shell completion.
+func phaseIDCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	matches, _ := filepath.Glob(filepath.Join(cfg.Phases.SpecDir, "PHASE*.md"))
+	var ids []string
+	for _, m := range matches {
+		base := filepath.Base(m)
+		if strings.Contains(base, "-PROMPT") {
+			continue
+		}
+		id := strings.TrimSuffix(strings.TrimPrefix(base, "PHASE"), ".md")
+		ids = append(ids, id)
+	}
+	return ids, cobra.ShellCompDirectiveNoFileComp
 }

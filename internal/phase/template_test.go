@@ -171,16 +171,17 @@ func TestBuildPromptData_DuplicateConstraints(t *testing.T) {
 
 func TestRenderPrompt_NonEmpty(t *testing.T) {
 	data := phase.PromptData{
-		Role:         "engineer",
-		Permission:   "standard",
-		PhaseID:      "2A",
-		PhaseName:    "Database Layer",
-		Title:        "Setup Schema",
-		PromptNumber: 1,
-		TotalPrompts: 2,
-		Task:         "Create the schema.",
-		Verification: []string{"go build ./...", "go test ./..."},
-		Constraints:  []string{"No CGO"},
+		Role:           "engineer",
+		Permission:     "standard",
+		PermissionDesc: phase.PermissionDescription("standard"),
+		PhaseID:        "2A",
+		PhaseName:      "Database Layer",
+		Title:          "Setup Schema",
+		PromptNumber:   1,
+		TotalPrompts:   2,
+		Task:           "Create the schema.",
+		Verification:   []string{"go build ./...", "go test ./..."},
+		Constraints:    []string{"No CGO"},
 	}
 
 	output, err := phase.RenderPrompt(data)
@@ -196,6 +197,8 @@ func TestRenderPrompt_NonEmpty(t *testing.T) {
 		"### Stop Rule",
 		"### Session Management",
 		"Phase 2A: Database Layer",
+		"---",
+		"Scoped write access",
 	} {
 		if !strings.Contains(output, want) {
 			t.Errorf("output missing %q", want)
@@ -310,6 +313,48 @@ func TestRenderPrompt_WithRoleDefinition(t *testing.T) {
 	}
 	if !strings.Contains(output, "implementation-focused engineer") {
 		t.Error("output missing role definition content")
+	}
+}
+
+func TestRenderPrompt_WithPermissionDesc(t *testing.T) {
+	data := phase.PromptData{
+		Role:           "engineer",
+		Permission:     "elevated",
+		PermissionDesc: phase.PermissionDescription("elevated"),
+		PhaseID:        "1A",
+		PhaseName:      "Test",
+		Title:          "Test Prompt",
+		PromptNumber:   1,
+		TotalPrompts:   1,
+	}
+
+	output, err := phase.RenderPrompt(data)
+	if err != nil {
+		t.Fatalf("RenderPrompt: %v", err)
+	}
+
+	if !strings.Contains(output, "> **elevated**:") {
+		t.Error("output missing permission description blockquote")
+	}
+	if !strings.Contains(output, "Project-wide write access") {
+		t.Error("output missing elevated permission description text")
+	}
+}
+
+func TestBuildPromptData_PopulatesPermissionDesc(t *testing.T) {
+	contract := phase.PromptContract{
+		PhaseID: "1A", PromptNumber: 1, TotalPrompts: 1,
+		Title: "Test", Task: "Do.",
+	}
+	spec := phase.PhaseSpec{ID: "1A", Name: "Test"}
+
+	data := phase.BuildPromptData(contract, spec, "", "", "", "engineer", "standard", "")
+
+	if data.PermissionDesc == "" {
+		t.Error("PermissionDesc should be populated for known permission tier")
+	}
+	if !strings.Contains(data.PermissionDesc, "Scoped write access") {
+		t.Errorf("PermissionDesc = %q, want to contain 'Scoped write access'", data.PermissionDesc)
 	}
 }
 

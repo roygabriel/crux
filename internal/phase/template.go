@@ -43,13 +43,8 @@ type PromptData struct {
 	BankSummary string `json:"bank_summary,omitempty"`
 	// RoleDefinition is the embedded markdown for the agent's role.
 	RoleDefinition string `json:"role_definition,omitempty"`
-}
-
-// defaultConstraints are always injected into every prompt.
-var defaultConstraints = []string{
-	"Do not modify files outside the scope of this prompt.",
-	"Update work notes after completing the task.",
-	"Run all verification commands before considering the task complete.",
+	// PermissionDesc is a one-line description of the permission tier.
+	PermissionDesc string `json:"permission_desc,omitempty"`
 }
 
 // BuildPromptData assembles a PromptData from a contract, spec, and context strings.
@@ -98,6 +93,7 @@ func BuildPromptData(contract PromptContract, spec PhaseSpec, workNotes, decisio
 		Decisions:         decisions,
 		BankSummary:       bankSummary,
 		RoleDefinition:    roleDefinition,
+		PermissionDesc:    PermissionDescription(permission),
 	}
 }
 
@@ -118,11 +114,15 @@ func RenderPrompt(data PromptData) (string, error) {
 const promptTemplateText = `## Role
 
 You are a **{{.Role}}** with **{{.Permission}}** permissions.
-{{if .RoleDefinition}}
+{{if .PermissionDesc}}
+> **{{.Permission}}**: {{.PermissionDesc}}
+{{end}}{{if .RoleDefinition}}
 ### Role Definition
 
 {{.RoleDefinition}}
 {{end}}
+---
+
 ## Phase {{.PhaseID}}: {{.PhaseName}} — Prompt {{.PromptNumber}} of {{.TotalPrompts}}
 
 ### {{.Title}}
@@ -141,7 +141,9 @@ You are a **{{.Role}}** with **{{.Permission}}** permissions.
 ### Memory Bank Summary
 
 {{.BankSummary}}
-{{end}}{{if .InterfaceContract}}
+{{end}}
+---
+{{if .InterfaceContract}}
 ### Interface Contract
 
 ` + "```go" + `
@@ -157,7 +159,9 @@ You are a **{{.Role}}** with **{{.Permission}}** permissions.
 {{end}}{{end}}{{if .Constraints}}
 ### Constraints
 {{range .Constraints}}- {{.}}
-{{end}}{{end}}{{if .Verification}}
+{{end}}{{end}}
+---
+{{if .Verification}}
 ### Verification
 {{range .Verification}}` + "```bash" + `
 {{.}}

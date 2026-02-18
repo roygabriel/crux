@@ -25,29 +25,37 @@ func TestModel_KeyQ_Quits(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected quit cmd, got nil")
 	}
-	// Execute the cmd and check it produces a QuitMsg.
 	msg := cmd()
 	if _, ok := msg.(tea.QuitMsg); !ok {
 		t.Errorf("expected QuitMsg, got %T", msg)
 	}
 }
 
-func TestModel_KeyTab_TogglesPanel(t *testing.T) {
+func TestModel_KeyTab_CyclesPanels(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
-	if m.activePanel != PanelAgents {
-		t.Fatalf("initial panel = %d, want PanelAgents", m.activePanel)
+	if m.activePanel != PanelSidebar {
+		t.Fatalf("initial panel = %d, want PanelSidebar", m.activePanel)
 	}
 
+	// Sidebar → Content.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m2 := updated.(Model)
-	if m2.activePanel != PanelLogs {
-		t.Errorf("after tab: panel = %d, want PanelLogs", m2.activePanel)
+	if m2.activePanel != PanelContent {
+		t.Errorf("after first tab: panel = %d, want PanelContent", m2.activePanel)
 	}
 
+	// Content → Logs.
 	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m3 := updated.(Model)
-	if m3.activePanel != PanelAgents {
-		t.Errorf("after second tab: panel = %d, want PanelAgents", m3.activePanel)
+	if m3.activePanel != PanelLogs {
+		t.Errorf("after second tab: panel = %d, want PanelLogs", m3.activePanel)
+	}
+
+	// Logs → Sidebar.
+	updated, _ = m3.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m4 := updated.(Model)
+	if m4.activePanel != PanelSidebar {
+		t.Errorf("after third tab: panel = %d, want PanelSidebar", m4.activePanel)
 	}
 }
 
@@ -108,16 +116,16 @@ func TestModel_View_NotReady(t *testing.T) {
 	}
 }
 
-func TestModel_AgentPanelKeyRouting(t *testing.T) {
+func TestModel_SidebarKeyRouting(t *testing.T) {
 	bus := NewCommandBus(4, slog.Default())
 	m := NewModel(NewStateBridge(1), nil, bus)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
+	m.sidebar.SetAgents([]AgentSnapshot{
 		{ID: "a1", Status: types.StatusStopped},
 	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
+	m.sidebar.SetFocused(true)
+	m.activePanel = PanelSidebar
 
-	// Press 'r' to resume the stopped agent — immediate command, no confirm.
+	// Press 'r' to resume the stopped agent.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	_ = updated.(Model)
 
@@ -134,6 +142,24 @@ func TestModel_AgentPanelKeyRouting(t *testing.T) {
 	}
 }
 
+func TestModel_ContentPanelKeyRouting(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.sidebar.SetAgents([]AgentSnapshot{
+		{ID: "a1", Status: types.StatusBusy, PaneContent: "output here"},
+	})
+	m.activePanel = PanelContent
+	m.contentPanel.SetFocused(true)
+	m.contentPanel.SetAgent(m.sidebar.SelectedAgent())
+
+	// Press '2' to switch to details tab.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m2 := updated.(Model)
+
+	if m2.contentPanel.ActiveTab() != TabDetails {
+		t.Errorf("tab = %d, want TabDetails", m2.contentPanel.ActiveTab())
+	}
+}
+
 func TestModel_LogPanelKeysAfterTab(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
 	m.logsPanel = NewLogsPanel(100)
@@ -142,32 +168,34 @@ func TestModel_LogPanelKeysAfterTab(t *testing.T) {
 	}
 	m.logsPanel.SetSize(80, 10)
 
-	// Tab to logs panel.
+	// Tab to Content, then to Logs.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m2 := updated.(Model)
-	if m2.activePanel != PanelLogs {
-		t.Fatalf("expected PanelLogs after tab")
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m3 := updated.(Model)
+	if m3.activePanel != PanelLogs {
+		t.Fatalf("expected PanelLogs, got %d", m3.activePanel)
 	}
 
-	// Press 'k' (scroll up) should work in logs panel.
-	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
-	m3 := updated.(Model)
-	if m3.logsPanel.scrollPos == 0 {
+	// Press 'k' to scroll up.
+	updated, _ = m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m4 := updated.(Model)
+	if m4.logsPanel.scrollPos == 0 {
 		t.Error("expected scroll position to change after 'k' in logs panel")
 	}
 }
 
 func TestModel_QuitDuringConfirmation(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
+	m.sidebar.SetAgents([]AgentSnapshot{
 		{ID: "a1", Status: types.StatusBusy},
 	})
-	m.activePanel = PanelAgents
+	m.activePanel = PanelSidebar
 
 	// Enter kill confirmation.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	m2 := updated.(Model)
-	if !m2.agentsPanel.IsConfirming() {
+	if !m2.sidebar.IsConfirming() {
 		t.Fatal("expected confirming state after 'x'")
 	}
 
@@ -184,139 +212,46 @@ func TestModel_QuitDuringConfirmation(t *testing.T) {
 
 func TestModel_NilCommandBus(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
+	m.sidebar.SetAgents([]AgentSnapshot{
 		{ID: "a1", Status: types.StatusStopped},
 	})
-	m.activePanel = PanelAgents
+	m.activePanel = PanelSidebar
 
 	// Press 'r' with nil commandBus — should not panic.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	_ = updated.(Model)
 }
 
-func TestModel_EnterOpensDetailView(t *testing.T) {
+func TestModel_SidebarSelectionUpdatesContent(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
-		{ID: "a1", Plugin: "claude", Status: types.StatusBusy, Task: "build"},
+	m.sidebar.SetAgents([]AgentSnapshot{
+		{ID: "a1", Status: types.StatusBusy, PaneContent: "content-a1"},
+		{ID: "a2", Status: types.StatusIdle, PaneContent: "content-a2"},
 	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-	m.width = 120
-	m.height = 40
+	m.activePanel = PanelSidebar
+	m.sidebar.SetFocused(true)
+	m.syncContentWithSidebar()
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.contentPanel.agentID() != "a1" {
+		t.Errorf("content agent = %q, want a1", m.contentPanel.agentID())
+	}
+
+	// Move cursor down.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m2 := updated.(Model)
 
-	if !m2.detailPanel.IsVisible() {
-		t.Fatal("detail panel should be visible after enter")
-	}
-	if m2.detailPanel.agentID != "a1" {
-		t.Errorf("detailPanel.agentID = %q, want %q", m2.detailPanel.agentID, "a1")
+	if m2.contentPanel.agentID() != "a2" {
+		t.Errorf("content agent = %q after j, want a2", m2.contentPanel.agentID())
 	}
 }
 
-func TestModel_EnterNoAgents_NoOp(t *testing.T) {
-	m := NewModel(NewStateBridge(1), nil, nil)
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m2 := updated.(Model)
-
-	if m2.detailPanel.IsVisible() {
-		t.Error("detail panel should not open with no agents")
-	}
-}
-
-func TestModel_EscInDetailReturnsToAgents(t *testing.T) {
-	m := NewModel(NewStateBridge(1), nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
-		{ID: "a1", Status: types.StatusBusy},
-	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-	m.width = 120
-	m.height = 40
-
-	// Open detail.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m2 := updated.(Model)
-	if !m2.detailPanel.IsVisible() {
-		t.Fatal("detail should be visible")
-	}
-
-	// Esc closes it.
-	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m3 := updated.(Model)
-	if m3.detailPanel.IsVisible() {
-		t.Error("detail should close on esc")
-	}
-}
-
-func TestModel_KeysInDetailDontLeakToAgentsPanel(t *testing.T) {
-	m := NewModel(NewStateBridge(1), nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
-		{ID: "a1", Status: types.StatusBusy},
-		{ID: "a2", Status: types.StatusIdle},
-	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-	m.width = 120
-	m.height = 40
-
-	// Open detail on first agent.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m2 := updated.(Model)
-	cursorBefore := m2.agentsPanel.cursor
-
-	// Press 'j' (would move cursor in agents panel).
-	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	m3 := updated.(Model)
-
-	if m3.agentsPanel.cursor != cursorBefore {
-		t.Error("'j' in detail view should not move agents panel cursor")
-	}
-}
-
-func TestModel_QuitInDetailView(t *testing.T) {
-	m := NewModel(NewStateBridge(1), nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
-		{ID: "a1", Status: types.StatusBusy},
-	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-	m.width = 120
-	m.height = 40
-
-	// Open detail.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m2 := updated.(Model)
-
-	// Press 'q' to quit.
-	_, cmd := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	if cmd == nil {
-		t.Fatal("expected quit cmd in detail view")
-	}
-	msg := cmd()
-	if _, ok := msg.(tea.QuitMsg); !ok {
-		t.Errorf("expected QuitMsg, got %T", msg)
-	}
-}
-
-func TestModel_StateUpdateRefreshesDetailView(t *testing.T) {
+func TestModel_StateUpdateRefreshesContent(t *testing.T) {
 	bridge := NewStateBridge(1)
 	m := NewModel(bridge, nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
+	m.sidebar.SetAgents([]AgentSnapshot{
 		{ID: "a1", Status: types.StatusBusy, Task: "old task"},
 	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-	m.width = 120
-	m.height = 40
-
-	// Open detail.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m2 := updated.(Model)
+	m.syncContentWithSidebar()
 
 	// State update with new task.
 	newState := StateUpdate{
@@ -325,103 +260,26 @@ func TestModel_StateUpdateRefreshesDetailView(t *testing.T) {
 		},
 		Timestamp: time.Now(),
 	}
-	updated, _ = m2.Update(StateUpdateMsg{State: newState})
-	m3 := updated.(Model)
-
-	if !m3.detailPanel.IsVisible() {
-		t.Fatal("detail should still be visible")
-	}
-	if m3.detailPanel.snapshot.Task != "new task" {
-		t.Errorf("snapshot.Task = %q, want %q", m3.detailPanel.snapshot.Task, "new task")
-	}
-}
-
-func TestModel_AgentRemovedClosesDetailView(t *testing.T) {
-	bridge := NewStateBridge(1)
-	m := NewModel(bridge, nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
-		{ID: "a1", Status: types.StatusBusy},
-	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-	m.width = 120
-	m.height = 40
-
-	// Open detail.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(StateUpdateMsg{State: newState})
 	m2 := updated.(Model)
 
-	// State update without the agent (killed).
-	newState := StateUpdate{
-		Agents:    []AgentSnapshot{},
-		Timestamp: time.Now(),
+	if m2.contentPanel.agent == nil {
+		t.Fatal("content panel agent should not be nil")
 	}
-	updated, _ = m2.Update(StateUpdateMsg{State: newState})
-	m3 := updated.(Model)
-
-	if m3.detailPanel.IsVisible() {
-		t.Error("detail should close when agent is removed")
-	}
-}
-
-func TestModel_TabBlockedDuringDetailView(t *testing.T) {
-	m := NewModel(NewStateBridge(1), nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
-		{ID: "a1", Status: types.StatusBusy},
-	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-	m.width = 120
-	m.height = 40
-
-	// Open detail.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m2 := updated.(Model)
-
-	// Tab should not switch panels.
-	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyTab})
-	m3 := updated.(Model)
-
-	if m3.activePanel != PanelAgents {
-		t.Error("tab should not switch panels while detail view is open")
-	}
-}
-
-func TestModel_DetailView_RendersFullScreen(t *testing.T) {
-	m := NewModel(NewStateBridge(1), nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
-		{ID: "a1", Plugin: "claude", Status: types.StatusBusy, Task: "build"},
-	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-	m.width = 120
-	m.height = 40
-	m.ready = true
-
-	// Open detail.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m2 := updated.(Model)
-
-	view := m2.View()
-	if !strings.Contains(view, "a1") {
-		t.Error("detail view should render agent ID")
-	}
-	if !strings.Contains(view, "claude") {
-		t.Error("detail view should render plugin")
+	if m2.contentPanel.agent.Task != "new task" {
+		t.Errorf("agent.Task = %q, want %q", m2.contentPanel.agent.Task, "new task")
 	}
 }
 
 func TestModel_HelpToggle(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
 
-	// Press '?' to show help.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	m2 := updated.(Model)
 	if !m2.helpOverlay.IsVisible() {
 		t.Error("help should be visible after '?'")
 	}
 
-	// Press '?' again to toggle off.
 	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	m3 := updated.(Model)
 	if m3.helpOverlay.IsVisible() {
@@ -432,14 +290,9 @@ func TestModel_HelpToggle(t *testing.T) {
 func TestModel_AnyKeyDismissesHelp(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
 
-	// Show help.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	m2 := updated.(Model)
-	if !m2.helpOverlay.IsVisible() {
-		t.Fatal("help should be visible")
-	}
 
-	// Press any key (e.g., 'a') to dismiss.
 	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	m3 := updated.(Model)
 	if m3.helpOverlay.IsVisible() {
@@ -449,9 +302,8 @@ func TestModel_AnyKeyDismissesHelp(t *testing.T) {
 
 func TestModel_HelpBlocksOtherKeys(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
-	m.activePanel = PanelAgents
+	m.activePanel = PanelSidebar
 
-	// Show help.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	m2 := updated.(Model)
 
@@ -461,33 +313,8 @@ func TestModel_HelpBlocksOtherKeys(t *testing.T) {
 	if m3.helpOverlay.IsVisible() {
 		t.Error("help should be dismissed")
 	}
-	if m3.activePanel != PanelAgents {
+	if m3.activePanel != PanelSidebar {
 		t.Error("tab should not switch panels when help was visible")
-	}
-}
-
-func TestModel_HelpFromDetailView(t *testing.T) {
-	m := NewModel(NewStateBridge(1), nil, nil)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
-		{ID: "a1", Status: types.StatusBusy},
-	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-	m.width = 120
-	m.height = 40
-
-	// Open detail.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m2 := updated.(Model)
-	if !m2.detailPanel.IsVisible() {
-		t.Fatal("detail should be visible")
-	}
-
-	// Press '?' from detail view.
-	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
-	m3 := updated.(Model)
-	if !m3.helpOverlay.IsVisible() {
-		t.Error("help should be visible from detail view")
 	}
 }
 
@@ -500,22 +327,22 @@ func TestModel_LogPanelFilterModeKeyRouting(t *testing.T) {
 	}
 	m.logsPanel.SetSize(80, 10)
 
-	// Switch to logs panel.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	m2 := updated.(Model)
+	// Switch to Logs panel.
+	m.activePanel = PanelLogs
+	m.logsPanel.SetFocused(true)
 
 	// Enter filter mode.
-	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
-	m3 := updated.(Model)
-	if !m3.logsPanel.IsFilterMode() {
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m2 := updated.(Model)
+	if !m2.logsPanel.IsFilterMode() {
 		t.Fatal("filter mode should be active")
 	}
 
 	// Type a character.
-	updated, _ = m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-	m4 := updated.(Model)
-	if m4.logsPanel.filterInput != "e" {
-		t.Errorf("filterInput = %q, want %q", m4.logsPanel.filterInput, "e")
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m3 := updated.(Model)
+	if m3.logsPanel.filterInput != "e" {
+		t.Errorf("filterInput = %q, want %q", m3.logsPanel.filterInput, "e")
 	}
 }
 
@@ -524,11 +351,8 @@ func TestModel_TabBlockedDuringFilterMode(t *testing.T) {
 	m.logsPanel = NewLogsPanel(100)
 	m.logsPanel.SetSize(80, 10)
 	m.activePanel = PanelLogs
-
-	// Enter filter mode.
 	m.logsPanel.filterMode = true
 
-	// Tab should not switch panels.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m2 := updated.(Model)
 	if m2.activePanel != PanelLogs {
@@ -536,25 +360,19 @@ func TestModel_TabBlockedDuringFilterMode(t *testing.T) {
 	}
 }
 
-func TestModel_LogsPanelKeysDelegatedThroughHandleKey(t *testing.T) {
+func TestModel_TabBlockedDuringInputMode(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
-	m.logsPanel = NewLogsPanel(100)
-	now := time.Now()
-	for i := 0; i < 20; i++ {
-		m.logsPanel.Append(LogEntry{Time: now, Level: LogInfo, Message: "line"})
-	}
-	m.logsPanel.SetSize(80, 10)
+	m.sidebar.SetAgents([]AgentSnapshot{
+		{ID: "a1", Status: types.StatusBusy},
+	})
+	m.contentPanel.SetAgent(m.sidebar.SelectedAgent())
+	m.activePanel = PanelContent
+	m.contentPanel.inputMode = true
 
-	// Switch to logs panel.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m2 := updated.(Model)
-
-	// Press 'j' (scroll down — but since autoScroll is true and scrollPos=0, scrollDown doesn't change much).
-	// Press 'k' to scroll up.
-	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
-	m3 := updated.(Model)
-	if m3.logsPanel.scrollPos != 1 {
-		t.Errorf("scrollPos = %d, want 1", m3.logsPanel.scrollPos)
+	if m2.activePanel != PanelContent {
+		t.Error("tab should not switch panels during input mode")
 	}
 }
 
@@ -626,8 +444,6 @@ func TestModel_QuitSendsCmdShutdown(t *testing.T) {
 
 func TestModel_QuitNilBusNoPanic(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
-
-	// Should not panic with nil bus.
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -648,33 +464,28 @@ func TestModel_WindowSizeSetsHelpOverlaySize(t *testing.T) {
 	}
 }
 
-func TestModel_DetailView_SendMessage(t *testing.T) {
+func TestModel_ContentPanel_SendMessage(t *testing.T) {
 	bus := NewCommandBus(4, slog.Default())
 	m := NewModel(NewStateBridge(1), nil, bus)
-	m.agentsPanel.SetAgents([]AgentSnapshot{
+	m.sidebar.SetAgents([]AgentSnapshot{
 		{ID: "a1", Status: types.StatusBusy},
 	})
-	m.agentsPanel.SetFocused(true)
-	m.activePanel = PanelAgents
-	m.width = 120
-	m.height = 40
-
-	// Open detail.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m2 := updated.(Model)
+	m.syncContentWithSidebar()
+	m.activePanel = PanelContent
+	m.contentPanel.SetFocused(true)
 
 	// Enter input mode.
-	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
-	m3 := updated.(Model)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m2 := updated.(Model)
 
 	// Type message.
-	updated, _ = m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m3 := updated.(Model)
+	updated, _ = m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	m4 := updated.(Model)
-	updated, _ = m4.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	m5 := updated.(Model)
 
 	// Send message.
-	updated, _ = m5.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = m4.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	_ = updated.(Model)
 
 	select {
@@ -690,5 +501,75 @@ func TestModel_DetailView_SendMessage(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected command on bus after message send")
+	}
+}
+
+func TestModel_ThreePanelView(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.sidebar.SetAgents([]AgentSnapshot{
+		{ID: "a1", Status: types.StatusBusy, PaneContent: "hello world"},
+	})
+	m.syncContentWithSidebar()
+
+	view := m.View()
+	if !strings.Contains(view, "AGENTS") {
+		t.Error("view should contain sidebar header")
+	}
+	if !strings.Contains(view, "a1") {
+		t.Error("view should contain agent ID in sidebar")
+	}
+	if !strings.Contains(view, "Session:") {
+		t.Error("view should contain status bar")
+	}
+}
+
+func TestModel_ConfirmationInterceptsKeys(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.sidebar.SetAgents([]AgentSnapshot{
+		{ID: "a1", Status: types.StatusBusy},
+		{ID: "a2", Status: types.StatusIdle},
+	})
+	m.activePanel = PanelSidebar
+	m.sidebar.SetFocused(true)
+
+	// Enter kill confirmation.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m2 := updated.(Model)
+	if !m2.sidebar.IsConfirming() {
+		t.Fatal("expected confirming state")
+	}
+
+	// Tab should be intercepted (no panel switch).
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m3 := updated.(Model)
+	if m3.activePanel != PanelSidebar {
+		t.Error("tab should not switch panels during confirmation")
+	}
+}
+
+func TestModel_SidebarWidth(t *testing.T) {
+	tests := []struct {
+		name      string
+		termWidth int
+		wantMin   int
+		wantMax   int
+	}{
+		{"narrow terminal", 60, sidebarMinWidth, sidebarMinWidth},
+		{"wide terminal", 160, sidebarMinWidth, sidebarMaxWidth},
+		{"medium terminal", 100, sidebarMinWidth, sidebarMaxWidth},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(NewStateBridge(1), nil, nil)
+			m.width = tt.termWidth
+			w := m.sidebarWidth()
+			if w < tt.wantMin || w > tt.wantMax {
+				t.Errorf("sidebarWidth() = %d, want [%d, %d]", w, tt.wantMin, tt.wantMax)
+			}
+		})
 	}
 }

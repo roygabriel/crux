@@ -12,10 +12,19 @@ import (
 type Panel int
 
 const (
-	// PanelAgents is the top panel showing agent status.
-	PanelAgents Panel = iota
-	// PanelLogs is the bottom panel showing the log stream.
+	// PanelSidebar is the left panel showing the agent list.
+	PanelSidebar Panel = iota
+	// PanelContent is the right top panel showing output/details/decisions.
+	PanelContent
+	// PanelLogs is the right bottom panel showing the log stream.
 	PanelLogs
+)
+
+// Sidebar width constraints.
+const (
+	sidebarMinWidth = 20
+	sidebarMaxWidth = 35
+	sidebarPct      = 25
 )
 
 var (
@@ -26,32 +35,33 @@ var (
 
 // Model is the top-level bubbletea model for the TUI dashboard.
 type Model struct {
-	bridge      *StateBridge
-	logBridge   *LogBridge
-	commandBus  *CommandBus
-	state       StateUpdate
-	activePanel Panel
-	agentsPanel AgentsPanel
-	logsPanel   LogsPanel
-	detailPanel DetailPanel
-	helpOverlay HelpOverlay
-	width       int
-	height      int
-	ready       bool
-	startedAt   time.Time
+	bridge       *StateBridge
+	logBridge    *LogBridge
+	commandBus   *CommandBus
+	state        StateUpdate
+	activePanel  Panel
+	sidebar      SidebarPanel
+	contentPanel ContentPanel
+	logsPanel    LogsPanel
+	helpOverlay  HelpOverlay
+	width        int
+	height       int
+	ready        bool
+	startedAt    time.Time
 }
 
 // NewModel creates a new TUI model connected to the given state, log, and
 // command bridges. The commandBus may be nil for read-only mode.
 func NewModel(bridge *StateBridge, logBridge *LogBridge, commandBus *CommandBus) Model {
 	return Model{
-		bridge:      bridge,
-		logBridge:   logBridge,
-		commandBus:  commandBus,
-		activePanel: PanelAgents,
-		agentsPanel: NewAgentsPanel(),
-		logsPanel:   NewLogsPanel(500),
-		startedAt:   time.Now(),
+		bridge:       bridge,
+		logBridge:    logBridge,
+		commandBus:   commandBus,
+		activePanel:  PanelSidebar,
+		sidebar:      NewSidebarPanel(),
+		contentPanel: NewContentPanel(),
+		logsPanel:    NewLogsPanel(500),
+		startedAt:    time.Now(),
 	}
 }
 
@@ -88,60 +98,59 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Priority 4: detail panel intercepts all other keys when visible.
-		if m.detailPanel.IsVisible() {
-			handled, cmd := m.detailPanel.HandleKey(key)
+		// Priority 4: content panel input mode intercepts all keys.
+		if m.contentPanel.IsInputMode() {
+			handled, cmd := m.contentPanel.HandleKey(key)
 			if handled && cmd != nil && m.commandBus != nil {
 				m.commandBus.Send(*cmd)
 			}
 			return m, nil
 		}
 
-		// Priority 5: filter mode intercepts all keys.
+		// Priority 5: sidebar confirmation mode intercepts all keys.
+		if m.sidebar.IsConfirming() {
+			handled, cmd := m.sidebar.HandleKey(key)
+			if handled && cmd != nil && m.commandBus != nil {
+				m.commandBus.Send(*cmd)
+			}
+			return m, nil
+		}
+
+		// Priority 6: filter mode intercepts all keys.
 		if m.logsPanel.IsFilterMode() {
 			m.logsPanel.HandleKey(key)
 			return m, nil
 		}
 
-		// Priority 6: tab toggles panel focus.
+		// Priority 7: tab cycles panel focus.
 		if key == "tab" {
-			if m.activePanel == PanelAgents {
-				m.activePanel = PanelLogs
-			} else {
-				m.activePanel = PanelAgents
-			}
-			m.agentsPanel.SetFocused(m.activePanel == PanelAgents)
-			m.logsPanel.SetFocused(m.activePanel == PanelLogs)
+			m.cyclePanel()
 			return m, nil
 		}
 
-		// Priority 7: panel-specific keys.
-		if m.activePanel == PanelAgents {
-			if key == "enter" {
-				if agent := m.agentsPanel.SelectedAgent(); agent != nil {
-					m.detailPanel.Open(agent)
-					availableHeight := m.height - 1
-					innerW := m.width - 4
-					if innerW < 0 {
-						innerW = 0
-					}
-					innerH := availableHeight - 4
-					if innerH < 0 {
-						innerH = 0
-					}
-					m.detailPanel.SetSize(innerW, innerH)
+		// Priority 8: panel-specific keys.
+		switch m.activePanel {
+		case PanelSidebar:
+			handled, cmd := m.sidebar.HandleKey(key)
+			if handled {
+				if cmd != nil && m.commandBus != nil {
+					m.commandBus.Send(*cmd)
 				}
+				// Update content panel when sidebar selection changes.
+				m.syncContentWithSidebar()
 				return m, nil
 			}
 
-			handled, cmd := m.agentsPanel.HandleKey(key)
+		case PanelContent:
+			handled, cmd := m.contentPanel.HandleKey(key)
 			if handled {
 				if cmd != nil && m.commandBus != nil {
 					m.commandBus.Send(*cmd)
 				}
 				return m, nil
 			}
-		} else {
+
+		case PanelLogs:
 			m.logsPanel.HandleKey(key)
 		}
 
@@ -149,53 +158,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
-
-		m.helpOverlay.SetSize(m.width, m.height)
-
-		availableHeight := m.height - 1 // reserve 1 line for status bar
-
-		agentsHeight := availableHeight * 40 / 100
-		if agentsHeight < 8 {
-			agentsHeight = 8
-		}
-		logsHeight := availableHeight - agentsHeight
-
-		innerW := m.width - 4
-		if innerW < 0 {
-			innerW = 0
-		}
-		agentsInnerH := agentsHeight - 4
-		if agentsInnerH < 0 {
-			agentsInnerH = 0
-		}
-		logsInnerH := logsHeight - 4
-		if logsInnerH < 0 {
-			logsInnerH = 0
-		}
-		m.agentsPanel.SetSize(innerW, agentsInnerH)
-		m.logsPanel.SetSize(innerW, logsInnerH)
-
-		detailInnerH := availableHeight - 4
-		if detailInnerH < 0 {
-			detailInnerH = 0
-		}
-		m.detailPanel.SetSize(innerW, detailInnerH)
+		m.recalcSizes()
 
 	case StateUpdateMsg:
 		m.state = msg.State
-		m.agentsPanel.SetAgents(msg.State.Agents)
+		m.sidebar.SetAgents(msg.State.Agents)
 
-		// Refresh the detail panel if it's open.
-		if m.detailPanel.IsVisible() {
-			var found *AgentSnapshot
-			for i := range msg.State.Agents {
-				if msg.State.Agents[i].ID == m.detailPanel.agentID {
-					found = &msg.State.Agents[i]
-					break
-				}
-			}
-			m.detailPanel.Update(found)
-		}
+		// Refresh content panel with the selected agent's latest data.
+		m.syncContentWithSidebar()
 
 		return m, WaitForUpdate(m.bridge)
 
@@ -207,74 +177,157 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View implements tea.Model. It renders a two-panel layout with agent status
-// on top and logs on the bottom, or a full-screen detail overlay.
-func (m Model) View() string {
-	if !m.ready {
-		return "Initializing..."
+// cyclePanel advances focus: Sidebar → Content → Logs → Sidebar.
+func (m *Model) cyclePanel() {
+	switch m.activePanel {
+	case PanelSidebar:
+		m.activePanel = PanelContent
+	case PanelContent:
+		m.activePanel = PanelLogs
+	case PanelLogs:
+		m.activePanel = PanelSidebar
 	}
+	m.sidebar.SetFocused(m.activePanel == PanelSidebar)
+	m.contentPanel.SetFocused(m.activePanel == PanelContent)
+	m.logsPanel.SetFocused(m.activePanel == PanelLogs)
+}
 
-	// Full-screen help overlay (no status bar).
-	if m.helpOverlay.IsVisible() {
-		return m.helpOverlay.View()
+// syncContentWithSidebar updates the content panel with the currently selected
+// agent from the sidebar.
+func (m *Model) syncContentWithSidebar() {
+	m.contentPanel.SetAgent(m.sidebar.SelectedAgent())
+}
+
+// recalcSizes recomputes panel dimensions after a resize.
+func (m *Model) recalcSizes() {
+	m.helpOverlay.SetSize(m.width, m.height)
+
+	availableHeight := m.height - 1 // status bar
+
+	sidebarW := m.sidebarWidth()
+	rightW := m.width - sidebarW
+
+	// Sidebar inner dimensions (border takes 4 chars width, 4 chars height).
+	sidebarInnerW := sidebarW - 4
+	if sidebarInnerW < 0 {
+		sidebarInnerW = 0
 	}
-
-	availableHeight := m.height - 1 // reserve 1 line for status bar
-
-	// Full-screen detail overlay when visible.
-	if m.detailPanel.IsVisible() {
-		innerW := m.width - 4
-		if innerW < 0 {
-			innerW = 0
-		}
-		innerH := availableHeight - 4
-		if innerH < 0 {
-			innerH = 0
-		}
-		content := m.detailPanel.View()
-		return focusedBorder.Width(innerW).Height(innerH).Render(content) + "\n" + m.renderStatusBar()
+	sidebarInnerH := availableHeight - 4
+	if sidebarInnerH < 0 {
+		sidebarInnerH = 0
 	}
+	m.sidebar.SetSize(sidebarInnerW, sidebarInnerH)
 
-	agentsHeight := availableHeight * 40 / 100
-	if agentsHeight < 8 {
-		agentsHeight = 8
+	// Right side split: 60% content, 40% logs.
+	contentHeight := availableHeight * 60 / 100
+	if contentHeight < 6 {
+		contentHeight = 6
 	}
-	logsHeight := availableHeight - agentsHeight
+	logsHeight := availableHeight - contentHeight
 
-	// Inner content dimensions account for border (2 chars each side).
-	innerW := m.width - 4
-	if innerW < 0 {
-		innerW = 0
+	rightInnerW := rightW - 4
+	if rightInnerW < 0 {
+		rightInnerW = 0
 	}
-	agentsInnerH := agentsHeight - 4
-	if agentsInnerH < 0 {
-		agentsInnerH = 0
+	contentInnerH := contentHeight - 4
+	if contentInnerH < 0 {
+		contentInnerH = 0
 	}
 	logsInnerH := logsHeight - 4
 	if logsInnerH < 0 {
 		logsInnerH = 0
 	}
 
-	agentsBorder := unfocusedBorder
+	m.contentPanel.SetSize(rightInnerW, contentInnerH)
+	m.logsPanel.SetSize(rightInnerW, logsInnerH)
+}
+
+// sidebarWidth returns the sidebar width clamped to min/max.
+func (m Model) sidebarWidth() int {
+	w := m.width * sidebarPct / 100
+	if w < sidebarMinWidth {
+		w = sidebarMinWidth
+	}
+	if w > sidebarMaxWidth {
+		w = sidebarMaxWidth
+	}
+	if w > m.width {
+		w = m.width
+	}
+	return w
+}
+
+// View implements tea.Model. It renders a three-panel lazydocker-style layout.
+func (m Model) View() string {
+	if !m.ready {
+		return "Initializing..."
+	}
+
+	if m.helpOverlay.IsVisible() {
+		return m.helpOverlay.View()
+	}
+
+	availableHeight := m.height - 1
+
+	sidebarW := m.sidebarWidth()
+	rightW := m.width - sidebarW
+
+	// Inner content dimensions (borders take 4 chars).
+	sidebarInnerW := sidebarW - 4
+	if sidebarInnerW < 0 {
+		sidebarInnerW = 0
+	}
+	sidebarInnerH := availableHeight - 4
+	if sidebarInnerH < 0 {
+		sidebarInnerH = 0
+	}
+
+	contentHeight := availableHeight * 60 / 100
+	if contentHeight < 6 {
+		contentHeight = 6
+	}
+	logsHeight := availableHeight - contentHeight
+
+	rightInnerW := rightW - 4
+	if rightInnerW < 0 {
+		rightInnerW = 0
+	}
+	contentInnerH := contentHeight - 4
+	if contentInnerH < 0 {
+		contentInnerH = 0
+	}
+	logsInnerH := logsHeight - 4
+	if logsInnerH < 0 {
+		logsInnerH = 0
+	}
+
+	// Border styles per focus state.
+	sidebarBorder := unfocusedBorder
+	contentBorder := unfocusedBorder
 	logsBorder := unfocusedBorder
-	if m.activePanel == PanelAgents {
-		agentsBorder = focusedBorder
-	} else {
+	switch m.activePanel {
+	case PanelSidebar:
+		sidebarBorder = focusedBorder
+	case PanelContent:
+		contentBorder = focusedBorder
+	case PanelLogs:
 		logsBorder = focusedBorder
 	}
 
-	agentsContent := m.agentsPanel.View()
-	logsContent := m.logsPanel.View()
+	// Render panels.
+	sidebarView := sidebarBorder.Width(sidebarInnerW).Height(sidebarInnerH).Render(m.sidebar.View())
+	contentView := contentBorder.Width(rightInnerW).Height(contentInnerH).Render(m.contentPanel.View())
+	logsView := logsBorder.Width(rightInnerW).Height(logsInnerH).Render(m.logsPanel.View())
 
-	top := agentsBorder.Width(innerW).Height(agentsInnerH).Render(agentsContent)
-	bottom := logsBorder.Width(innerW).Height(logsInnerH).Render(logsContent)
+	// Compose layout: sidebar | (content / logs).
+	rightColumn := lipgloss.JoinVertical(lipgloss.Left, contentView, logsView)
+	main := lipgloss.JoinHorizontal(lipgloss.Top, sidebarView, rightColumn)
 
-	return fmt.Sprintf("%s\n%s\n%s", top, bottom, m.renderStatusBar())
+	return main + "\n" + m.renderStatusBar()
 }
 
 // renderStatusBar returns the bottom status bar with phase, agent summary, and session duration.
 func (m Model) renderStatusBar() string {
-	// Left: phase info.
 	left := ""
 	if m.state.PhaseName != "" {
 		left = fmt.Sprintf(" %s", m.state.PhaseName)
@@ -283,16 +336,13 @@ func (m Model) renderStatusBar() string {
 		}
 	}
 
-	// Center: agent summary.
 	center := agentSummary(m.state.Agents)
 
-	// Right: session duration.
 	dur := time.Since(m.startedAt).Truncate(time.Second)
 	minutes := int(dur.Minutes())
 	seconds := int(dur.Seconds()) % 60
 	right := fmt.Sprintf("Session: %dm%02ds ", minutes, seconds)
 
-	// Three-column layout.
 	leftWidth := m.width / 3
 	centerWidth := m.width / 3
 	rightWidth := m.width - leftWidth - centerWidth
@@ -316,7 +366,6 @@ func agentSummary(agents []AgentSnapshot) string {
 	}
 
 	var parts []string
-	// Ordered status keys for deterministic output.
 	for _, status := range []string{"busy", "idle", "stopped", "error", "rate-limited"} {
 		if c, ok := counts[status]; ok {
 			parts = append(parts, fmt.Sprintf("%d %s", c, status))

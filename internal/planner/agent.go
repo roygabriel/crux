@@ -18,8 +18,13 @@ const DefaultModel = "claude-sonnet-4-5-20250929"
 // defaultMaxTokens is the fallback output token limit when none is configured.
 const defaultMaxTokens = 16384
 
-// streamTimeout is the maximum duration for a streaming API response.
-const streamTimeout = 120 * time.Second
+// connectTimeout is the maximum time to wait for the API to accept a request
+// (i.e. receive the first message_start event).
+const connectTimeout = 2 * time.Minute
+
+// streamTimeout is the maximum total duration for a streaming API response
+// once the API has accepted the request.
+const streamTimeout = 10 * time.Minute
 
 // Message is a display-friendly representation of a conversation turn.
 type Message struct {
@@ -158,6 +163,8 @@ func (a *Agent) stream(ctx context.Context) (<-chan StreamChunk, error) {
 		maxTok = defaultMaxTokens
 	}
 
+	// Use the full stream timeout for the SDK connection. A separate timer
+	// enforces the shorter connect timeout until message_start arrives.
 	ctx, cancel := context.WithTimeout(ctx, streamTimeout)
 
 	params := anthropic.MessageNewParams{
@@ -180,6 +187,13 @@ func (a *Agent) stream(ctx context.Context) (<-chan StreamChunk, error) {
 		defer close(ch)
 		defer s.Close()
 
+		// Connect timer: cancel if the API doesn't accept within connectTimeout.
+		connectTimer := time.AfterFunc(connectTimeout, func() {
+			a.logger.Warn("connect timeout waiting for API to accept request")
+			cancel()
+		})
+		defer connectTimer.Stop()
+
 		msg := anthropic.Message{}
 		for s.Next() {
 			event := s.Current()
@@ -190,6 +204,10 @@ func (a *Agent) stream(ctx context.Context) (<-chan StreamChunk, error) {
 			}
 
 			switch ev := event.AsAny().(type) {
+			case anthropic.MessageStartEvent:
+				// API accepted — disable the connect timer.
+				connectTimer.Stop()
+				a.logger.Debug("stream accepted by API", "model", ev.Message.Model)
 			case anthropic.ContentBlockDeltaEvent:
 				switch delta := ev.Delta.AsAny().(type) {
 				case anthropic.TextDelta:

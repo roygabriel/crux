@@ -146,6 +146,7 @@ var startCmd = &cobra.Command{
 			watcher, messenger, sessionMgr, notesMgr, j, log,
 		)
 		orch.SetSecurityGate(&securityAdapter{mw: secMiddleware})
+		orch.SetTmuxSessionManager(sm)
 
 		// Signal handling: SIGINT/SIGTERM cancel the context.
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

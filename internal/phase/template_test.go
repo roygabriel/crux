@@ -34,7 +34,7 @@ func TestBuildPromptData_AllFields(t *testing.T) {
 		Name: "Database Layer",
 	}
 
-	data := phase.BuildPromptData(contract, spec, "some work notes", "some decisions", "bank summary", "engineer", "standard")
+	data := phase.BuildPromptData(contract, spec, "some work notes", "some decisions", "bank summary", "engineer", "standard", "")
 
 	if data.Role != "engineer" {
 		t.Errorf("Role = %q, want %q", data.Role, "engineer")
@@ -122,7 +122,7 @@ func TestBuildPromptData_EmptyOptionals(t *testing.T) {
 		Name: "First Phase",
 	}
 
-	data := phase.BuildPromptData(contract, spec, "", "", "", "engineer", "readonly")
+	data := phase.BuildPromptData(contract, spec, "", "", "", "engineer", "readonly", "")
 
 	if data.InterfaceContract != "" {
 		t.Errorf("InterfaceContract should be empty, got %q", data.InterfaceContract)
@@ -161,7 +161,7 @@ func TestBuildPromptData_DuplicateConstraints(t *testing.T) {
 
 	spec := phase.PhaseSpec{ID: types.PhaseID("1A"), Name: "Test"}
 
-	data := phase.BuildPromptData(contract, spec, "", "", "", "engineer", "standard")
+	data := phase.BuildPromptData(contract, spec, "", "", "", "engineer", "standard", "")
 
 	// Should have: "Do not modify..." (deduped), "Custom rule", + 2 remaining defaults = 4
 	if len(data.Constraints) != 4 {
@@ -240,6 +240,9 @@ func TestRenderPrompt_EmptyOptionals(t *testing.T) {
 	if strings.Contains(output, "### Required Reading") {
 		t.Error("output should not contain '### Required Reading' when RequiredReading is empty")
 	}
+	if strings.Contains(output, "### Role Definition") {
+		t.Error("output should not contain '### Role Definition' when RoleDefinition is empty")
+	}
 }
 
 func TestRenderPrompt_DefaultSections(t *testing.T) {
@@ -264,5 +267,69 @@ func TestRenderPrompt_DefaultSections(t *testing.T) {
 	}
 	if !strings.Contains(output, "### Session Management") {
 		t.Error("output missing '### Session Management' section")
+	}
+}
+
+func TestBuildPromptData_WithRoleDefinition(t *testing.T) {
+	contract := phase.PromptContract{
+		PhaseID:      "1A",
+		PromptNumber: 1,
+		TotalPrompts: 1,
+		Title:        "Test",
+		Task:         "Do something.",
+	}
+	spec := phase.PhaseSpec{ID: "1A", Name: "Test"}
+
+	roleDef := "You are an implementation-focused engineer."
+	data := phase.BuildPromptData(contract, spec, "", "", "", "engineer", "standard", roleDef)
+
+	if data.RoleDefinition != roleDef {
+		t.Errorf("RoleDefinition = %q, want %q", data.RoleDefinition, roleDef)
+	}
+}
+
+func TestRenderPrompt_WithRoleDefinition(t *testing.T) {
+	data := phase.PromptData{
+		Role:           "engineer",
+		Permission:     "standard",
+		PhaseID:        "1A",
+		PhaseName:      "Test",
+		Title:          "Test Prompt",
+		PromptNumber:   1,
+		TotalPrompts:   1,
+		RoleDefinition: "You are an implementation-focused engineer.",
+	}
+
+	output, err := phase.RenderPrompt(data)
+	if err != nil {
+		t.Fatalf("RenderPrompt: %v", err)
+	}
+
+	if !strings.Contains(output, "### Role Definition") {
+		t.Error("output missing '### Role Definition' header")
+	}
+	if !strings.Contains(output, "implementation-focused engineer") {
+		t.Error("output missing role definition content")
+	}
+}
+
+func TestRenderPrompt_EmptyRoleDefinition(t *testing.T) {
+	data := phase.PromptData{
+		Role:         "engineer",
+		Permission:   "standard",
+		PhaseID:      "1A",
+		PhaseName:    "Test",
+		Title:        "Test Prompt",
+		PromptNumber: 1,
+		TotalPrompts: 1,
+	}
+
+	output, err := phase.RenderPrompt(data)
+	if err != nil {
+		t.Fatalf("RenderPrompt: %v", err)
+	}
+
+	if strings.Contains(output, "### Role Definition") {
+		t.Error("output should not contain '### Role Definition' when RoleDefinition is empty")
 	}
 }

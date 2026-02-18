@@ -16,6 +16,8 @@ const (
 	RoleProjectManager AgentRole = "project-manager"
 	// RoleEngineer executes implementation prompts.
 	RoleEngineer AgentRole = "engineer"
+	// RoleReviewer performs code review and quality checks.
+	RoleReviewer AgentRole = "reviewer"
 )
 
 // String returns the string representation of an AgentRole.

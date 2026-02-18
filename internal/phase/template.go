@@ -41,6 +41,8 @@ type PromptData struct {
 	Decisions string `json:"decisions,omitempty"`
 	// BankSummary is the pre-rendered memory bank summary.
 	BankSummary string `json:"bank_summary,omitempty"`
+	// RoleDefinition is the embedded markdown for the agent's role.
+	RoleDefinition string `json:"role_definition,omitempty"`
 }
 
 // defaultConstraints are always injected into every prompt.
@@ -52,7 +54,7 @@ var defaultConstraints = []string{
 
 // BuildPromptData assembles a PromptData from a contract, spec, and context strings.
 // It is a pure function with no I/O.
-func BuildPromptData(contract PromptContract, spec PhaseSpec, workNotes, decisions, bankSummary, role, permission string) PromptData {
+func BuildPromptData(contract PromptContract, spec PhaseSpec, workNotes, decisions, bankSummary, role, permission, roleDefinition string) PromptData {
 	// Extract command strings from verification gates.
 	var verification []string
 	for _, g := range contract.Verification {
@@ -95,6 +97,7 @@ func BuildPromptData(contract PromptContract, spec PhaseSpec, workNotes, decisio
 		WorkNotes:         workNotes,
 		Decisions:         decisions,
 		BankSummary:       bankSummary,
+		RoleDefinition:    roleDefinition,
 	}
 }
 
@@ -115,7 +118,11 @@ func RenderPrompt(data PromptData) (string, error) {
 const promptTemplateText = `## Role
 
 You are a **{{.Role}}** with **{{.Permission}}** permissions.
+{{if .RoleDefinition}}
+### Role Definition
 
+{{.RoleDefinition}}
+{{end}}
 ## Phase {{.PhaseID}}: {{.PhaseName}} — Prompt {{.PromptNumber}} of {{.TotalPrompts}}
 
 ### {{.Title}}

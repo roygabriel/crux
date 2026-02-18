@@ -336,3 +336,29 @@ func TestFormatDecisions(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildForPrompt_IncludesRoleDefinition(t *testing.T) {
+	wn := &mockContextWorkNotes{
+		notes: map[string]*worknotes.WorkNotes{
+			"1A": {PhaseID: "1A"},
+		},
+	}
+	js := &mockDecisionSearcher{decisions: nil}
+	bank := &mockBankSummarizer{summary: ""}
+
+	cb := phase.NewContextBuilder(js, wn, bank, slog.Default())
+
+	contract := phase.PromptContract{
+		PhaseID: "1A", PromptNumber: 1, TotalPrompts: 1,
+		Title: "Test", Task: "Do.",
+	}
+	spec := phase.PhaseSpec{ID: "1A", Name: "Test"}
+
+	data, err := cb.BuildForPrompt(context.Background(), contract, spec, "engineer", "standard")
+	if err != nil {
+		t.Fatalf("BuildForPrompt: %v", err)
+	}
+	if data.RoleDefinition == "" {
+		t.Error("expected non-empty RoleDefinition for engineer role")
+	}
+}

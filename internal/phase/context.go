@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/roygabriel/crux/internal/roles"
 	"github.com/roygabriel/crux/pkg/types"
 )
 
@@ -114,7 +115,9 @@ func (cb *ContextBuilder) BuildForPrompt(
 		workNotesText, decisionsText, bankSummary = cb.enforcer.Enforce(workNotesText, decisionsText, bankSummary)
 	}
 
-	return BuildPromptData(contract, spec, workNotesText, decisionsText, bankSummary, agentRole, agentPerm), nil
+	roleDefinition := roles.Definition(agentRole)
+
+	return BuildPromptData(contract, spec, workNotesText, decisionsText, bankSummary, agentRole, agentPerm, roleDefinition), nil
 }
 
 // formatDecisions renders a slice of decisions into a readable text block.

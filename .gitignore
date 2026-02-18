@@ -21,6 +21,7 @@ vendor/
 # Build output
 /bin/
 /dist/
+/crux
 
 # IDE / Editor
 .idea/

@@ -28,7 +28,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var headlessFlag bool
+var (
+	headlessFlag    bool
+	noInstructFlag  bool
+)
 
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -140,6 +143,14 @@ var startCmd = &cobra.Command{
 
 		messenger.SetMessageGate(secMiddleware)
 
+		// Generate instruction files unless --no-instruct is set.
+		if !noInstructFlag {
+			dist := buildDistributor(cfg, log)
+			if err := dist.GenerateAll(context.Background()); err != nil {
+				log.Warn("instruction generation failed", "error", err)
+			}
+		}
+
 		// Build orchestrator.
 		orch := orchestrator.New(
 			cfg, registry, engine, completion, contextBld, tracker,
@@ -166,6 +177,7 @@ var startCmd = &cobra.Command{
 
 func init() {
 	startCmd.Flags().BoolVar(&headlessFlag, "headless", false, "Run without the terminal dashboard (for CI/scripting)")
+	startCmd.Flags().BoolVar(&noInstructFlag, "no-instruct", false, "Skip instruction file generation on start")
 }
 
 // runWithTUI starts the orchestrator in a background goroutine and runs the

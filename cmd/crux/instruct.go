@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -301,8 +303,7 @@ func runInstructStatus(cmd *cobra.Command, args []string) error {
 }
 
 // buildDistributor creates a Distributor from config for CLI use.
-func buildDistributor(cfg *config.Config, log interface{ Debug(string, ...any) }) *instruct.Distributor {
-	logger := setupLogger()
+func buildDistributor(cfg *config.Config, logger *slog.Logger) *instruct.Distributor {
 
 	templateFS, err := instruct.TemplatesFS()
 	if err != nil {
@@ -440,13 +441,7 @@ func simpleDiff(oldLines, newLines []string) string {
 
 // hashContent computes SHA-256 of content for status display.
 func hashContent(content string) [32]byte {
-	// Use crypto/sha256 via a local import to match distributor.
-	// For simplicity, recompute here.
-	import_sha := [32]byte{}
-	h := import_sha // dummy; real implementation below
-	_ = h
-	// Actually compute:
-	return sha256Sum(content)
+	return sha256.Sum256([]byte(content))
 }
 
 // truncTime truncates a time string to maxLen characters.

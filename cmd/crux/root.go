@@ -30,6 +30,7 @@ func init() {
 	rootCmd.AddCommand(notesCmd)
 	rootCmd.AddCommand(replayCmd)
 	rootCmd.AddCommand(auditCmd)
+	rootCmd.AddCommand(instructCmd)
 }
 
 func setupLogger() *slog.Logger {

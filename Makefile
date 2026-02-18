@@ -7,7 +7,9 @@ BUILDFLAGS := -trimpath -ldflags="$(LDFLAGS)"
 
 MIN_COVERAGE := 70
 
-.PHONY: build test lint vet coverage coverage-check integration clean
+PREFIX ?= /usr/local
+
+.PHONY: build test lint vet coverage coverage-check integration clean completions man docs-gen docs-serve docs-build install install-man
 
 build:
 	CGO_ENABLED=0 go build $(BUILDFLAGS) -o $(BUILD_DIR)/$(BINARY) ./cmd/crux
@@ -39,6 +41,32 @@ coverage.out:
 
 integration:
 	go test -race -tags=integration ./...
+
+completions: build
+	@mkdir -p completions
+	$(BUILD_DIR)/$(BINARY) completion bash > completions/crux.bash
+	$(BUILD_DIR)/$(BINARY) completion zsh > completions/_crux
+	$(BUILD_DIR)/$(BINARY) completion fish > completions/crux.fish
+
+man: build
+	$(BUILD_DIR)/$(BINARY) __gen-man --dir man/man1
+
+docs-gen: build
+	$(BUILD_DIR)/$(BINARY) __gen-docs --dir docs/site/content/reference/cli
+
+docs-serve: docs-gen
+	cd docs/site && hugo server -D
+
+docs-build: docs-gen
+	cd docs/site && hugo --minify
+
+install: build
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 755 $(BUILD_DIR)/$(BINARY) $(DESTDIR)$(PREFIX)/bin/$(BINARY)
+
+install-man: man
+	install -d $(DESTDIR)$(PREFIX)/share/man/man1
+	install -m 644 man/man1/*.1 $(DESTDIR)$(PREFIX)/share/man/man1/
 
 clean:
 	rm -rf $(BUILD_DIR) coverage.out

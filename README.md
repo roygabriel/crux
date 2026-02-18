@@ -4,38 +4,64 @@ A single-binary Go orchestrator that coordinates AI coding agents across tmux se
 
 Crux manages Claude Code, Codex CLI, Gemini CLI, or any configurable CLI tool — assigning tasks from phase documents, enforcing verification gates between prompts, and maintaining a decision journal so the orchestrator never loses track of what agents are doing.
 
-## Why
+## Installation
 
-Multi-agent coding breaks in predictable ways:
+### From Source
 
-- The orchestrator forgets what agents decided three prompts ago and issues contradictory instructions.
-- Agents drift from scope because nothing enforces verification between steps.
-- Sessions die and all context is lost — the next session starts from scratch.
-- Parallel agents silently edit the same files and produce merge conflicts.
+```bash
+git clone https://github.com/roygabriel/crux.git
+cd crux
+make build
+sudo make install
+```
 
-Crux fixes these by automating the Plan → Prompt → Execute → Verify → Commit loop described in the [LLM Development Guide](https://roygabriel.dev/blog/llm-development-guide/), turning a manual human workflow into an automated system that runs across multiple agents simultaneously.
+### Using `go install`
+
+```bash
+go install github.com/roygabriel/crux/cmd/crux@latest
+```
+
+### Curl Installer (Linux / macOS)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/roygabriel/crux/main/scripts/install.sh | sh
+```
+
+Requires **tmux** — install with your system package manager (`apt install tmux`, `brew install tmux`, etc.).
 
 ## Quick Start
 
 ```bash
-# Build (single binary, no CGO, no Docker)
-make build
-
-# Initialize a project
-./bin/crux init
+# Initialize a project with the built-in example
+crux init --example httpapi
 
 # Start orchestration
-./bin/crux start
+crux start
 
 # Check what's happening
-./bin/crux status
+crux status
 
 # Search past decisions
-./bin/crux decisions search "chose chi router over gorilla mux"
+crux decisions search "chose chi router over gorilla mux"
 
 # View work notes for a phase
-./bin/crux notes show 2a
+crux notes show 2a
 ```
+
+## Shell Completions
+
+```bash
+# Bash
+source <(crux completion bash)
+
+# Zsh
+crux completion zsh > "${fpath[1]}/_crux"
+
+# Fish
+crux completion fish | source
+```
+
+See `crux completion --help` for all options including permanent installation.
 
 ## Architecture
 
@@ -401,15 +427,18 @@ crux audit --since 24h             View audit log with filters
 
 **Gates are non-negotiable.** The engine will not advance to the next prompt until `go build`, `go test`, and `go vet` pass. There is no "skip and fix later." If a gate fails, the agent is halted and the failure is logged.
 
-## Implementation Plan
+## Documentation
 
-18 phases across 9 milestones. The critical path is:
+Full documentation is available at [roygabriel.github.io/crux](https://roygabriel.github.io/crux/) or can be built locally:
 
+```bash
+make docs-gen     # Generate CLI reference
+make docs-serve   # Start local Hugo server
 ```
-1A (skeleton) → 1B (tmux) → 2A (plugins) → 3A (memory) → 4A (phase engine) → 5A (orchestrator)
-```
 
-Full phase index with dependency graph and parallel safety matrix: [docs/phases/INDEX.md](docs/phases/INDEX.md).
+- [Architecture](docs/site/content/concepts/architecture.md) — six-layer stack overview
+- [Configuration Reference](docs/site/content/reference/configuration.md) — every config key explained
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — common issues and solutions
 
 ## Dependencies
 

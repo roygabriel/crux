@@ -51,3 +51,9 @@ docs/phases/
 # Working notes (local only)
 work-notes/
 docs/notes/
+
+# Generated artifacts
+man/
+completions/
+public/
+docs/site/resources/

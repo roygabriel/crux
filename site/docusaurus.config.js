@@ -140,6 +140,11 @@ const config = {
             position: 'left',
           },
           {
+            href: 'https://github.com/users/roygabriel/projects/2',
+            label: 'Roadmap',
+            position: 'left',
+          },
+          {
             href: 'https://github.com/roygabriel/crux',
             label: 'GitHub',
             position: 'right',

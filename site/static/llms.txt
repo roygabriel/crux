@@ -1,35 +1,40 @@
 # Crux
 
-> Crux is an open-source Go CLI that orchestrates multiple AI coding agents (Claude Code, Codex CLI, Gemini CLI) running in tmux sessions with phase-based execution, persistent memory, and verification gates.
+> Crux is an open-source Go CLI that orchestrates multiple AI coding agents (Claude Code, Codex CLI, Gemini CLI) running in parallel tmux sessions. It enforces phase-based execution with a two-document system (spec + prompt doc), three-layer persistent memory (markdown bank, SQLite with FTS5, chromem-go vector index), verification gates (go build/vet/test must pass before advancing), and four-tier security sandboxing. Single binary, no CGO, MIT licensed.
 
-## What Crux Does
+Crux automates the workflow: Plan → Write prompt docs → Execute with agents → Verify → Commit. Instead of a human pasting context and running checks, Crux does this for every agent, every prompt, every session. Agents communicate via tmux send-keys/capture-pane with JSON message envelopes. The orchestrator polls panes every 1-2 seconds, tracks world state, and uses Decision RAG (vector search over past decisions) to make coordination choices.
 
-Crux coordinates multiple AI coding agents working simultaneously on a codebase. It manages them through tmux sessions, assigns tasks via a phase-based workflow system, tracks every decision in a searchable memory system, and enforces verification gates before advancing.
+Key technical constraints: all code compiles with CGO_ENABLED=0, SQLite via ncruces/go-sqlite3 (WASM-based), vector search via chromem-go (embedded, no external services), embeddings via Ollama or cloud providers (OpenAI, Google, Cohere).
 
-## Key Concepts
+## Docs
 
-- **Phase Engine**: Two-document system (spec + prompt doc) defining what to build and how. Phases have dependencies, file lists, and exit criteria (go build, go test, go vet must pass).
-- **Memory System**: Three layers: markdown memory bank for human-readable context, SQLite with FTS5 for structured data, and chromem-go vector index for semantic search over decisions.
-- **Agent Plugins**: Each CLI tool implements the AgentPlugin Go interface. Ships with adapters for Claude Code, Codex CLI, Gemini CLI, and a configurable Generic adapter.
-- **Security Model**: Four-tier permissions (readonly, standard, elevated, autonomous), filesystem sandboxing, structured audit logging, and per-agent rate limiting.
-- **Orchestrator Loop**: Polls agent tmux panes every 1-2 seconds, updates world state, checks for completed prompts, runs verification gates, and advances phases.
+- [Getting Started](https://roygabriel.github.io/crux/docs/getting-started/installation): Installation, quick start, first project walkthrough
+- [Architecture](https://roygabriel.github.io/crux/docs/concepts/architecture): Core architecture reference — orchestrator loop, agent plugins, memory system, security model
+- [Phase System](https://roygabriel.github.io/crux/docs/concepts/phase-system): Two-document system (phase spec + prompt doc), phase engine, dependency graph, verification gates
+- [Memory System](https://roygabriel.github.io/crux/docs/concepts/memory): Three-layer memory — markdown bank, SQLite operational store with FTS5, chromem-go vector index
+- [Security Model](https://roygabriel.github.io/crux/docs/concepts/security): Four-tier permissions (readonly/standard/elevated/autonomous), filesystem sandbox, audit logging, rate limiting
+- [Configuration](https://roygabriel.github.io/crux/docs/reference/configuration): YAML config reference, all fields with types and defaults, environment variable overrides
+- [CLI Reference](https://roygabriel.github.io/crux/docs/reference/cli): All commands — init, start, status, phase, decisions, notes, replay, audit, plan, instruct, prefs
+- [Writing Phases](https://roygabriel.github.io/crux/docs/guides/writing-phases): How to write phase specs and prompt docs, decomposition heuristics, exit criteria rules
+- [Multi-Agent Workflows](https://roygabriel.github.io/crux/docs/guides/multi-agent): Running parallel agents, file scope validation, branch management, conflict detection
+- [Custom Plugins](https://roygabriel.github.io/crux/docs/guides/custom-plugins): Building an AgentPlugin implementation — LaunchCmd, DetectReady, DetectBusy, FormatMessage, ParseOutput
 
-## Documentation
+## API
 
-- Getting Started: https://roygabriel.github.io/crux/docs/getting-started/installation
-- Architecture: https://roygabriel.github.io/crux/docs/concepts/architecture
-- Configuration: https://roygabriel.github.io/crux/docs/reference/configuration
-- CLI Reference: https://roygabriel.github.io/crux/docs/reference/cli
-- Writing Phases: https://roygabriel.github.io/crux/docs/guides/writing-phases
-- Multi-Agent Workflows: https://roygabriel.github.io/crux/docs/guides/multi-agent
-- Custom Plugins: https://roygabriel.github.io/crux/docs/guides/custom-plugins
-- Memory System: https://roygabriel.github.io/crux/docs/concepts/memory
-- Phase System: https://roygabriel.github.io/crux/docs/concepts/phase-system
-- Security Model: https://roygabriel.github.io/crux/docs/concepts/security
+- [AgentPlugin Interface](https://roygabriel.github.io/crux/docs/reference/agent-plugin): Go interface that each CLI tool implements — Name, LaunchCmd, DetectReady, DetectBusy, DetectError, DetectRateLimit, FormatMessage, ParseOutput, Capabilities
+- [Phase Spec Format](https://roygabriel.github.io/crux/docs/reference/phase-spec-format): Status, Depends On, Design Rationale, Tasks (by prompt), Files (New/Modified/Referenced), Exit Criteria
+- [Prompt Doc Format](https://roygabriel.github.io/crux/docs/reference/prompt-doc-format): Required Reading, Interface Contract, Task, Verification, Acceptance Criteria, Stop Rule per prompt
+- [Message Protocol](https://roygabriel.github.io/crux/docs/reference/message-protocol): JSON envelope format for orchestrator-agent communication over tmux
 
-## Source Code
+## Optional
 
-- GitHub: https://github.com/roygabriel/crux
-- License: MIT
-- Language: Go
-- Issues: https://github.com/roygabriel/crux/issues
+- [Telegram Integration](https://roygabriel.github.io/crux/docs/guides/telegram): Telegram bot for remote monitoring, notifications, and approval workflows
+- [MCP Server Registry](https://roygabriel.github.io/crux/docs/guides/mcp-registry): Parse and register MCP servers from Claude/Codex/Gemini configs for tool-aware task routing
+- [Troubleshooting](https://roygabriel.github.io/crux/docs/troubleshooting): Common issues — agent detection, gate failures, rate limits, tmux sessions, SQLite locking, vector search
+- [Contributing](https://roygabriel.github.io/crux/docs/contributing): Development setup, code conventions, PR process, architecture decisions
+
+## Source
+
+- [GitHub Repository](https://github.com/roygabriel/crux)
+- [Issues](https://github.com/roygabriel/crux/issues)
+- [License: MIT](https://github.com/roygabriel/crux/blob/main/LICENSE)

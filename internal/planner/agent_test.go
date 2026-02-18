@@ -62,7 +62,7 @@ func testPreferences() *prefs.Preferences {
 }
 
 func TestNewAgent_ValidConstruction(t *testing.T) {
-	agent, err := NewAgent("test-key", "", testProjectContext(), testPreferences(), nil)
+	agent, err := NewAgent("test-key", "", testProjectContext(), testPreferences(), nil, 0)
 	if err != nil {
 		t.Fatalf("NewAgent: unexpected error: %v", err)
 	}
@@ -80,8 +80,28 @@ func TestNewAgent_ValidConstruction(t *testing.T) {
 	}
 }
 
+func TestNewAgent_MaxTokens(t *testing.T) {
+	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil, 32000)
+	if err != nil {
+		t.Fatalf("NewAgent: unexpected error: %v", err)
+	}
+	if agent.maxTokens != 32000 {
+		t.Errorf("maxTokens = %d, want %d", agent.maxTokens, 32000)
+	}
+}
+
+func TestNewAgent_MaxTokensZeroDefault(t *testing.T) {
+	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil, 0)
+	if err != nil {
+		t.Fatalf("NewAgent: unexpected error: %v", err)
+	}
+	if agent.maxTokens != 0 {
+		t.Errorf("maxTokens = %d, want 0 (will use defaultMaxTokens at stream time)", agent.maxTokens)
+	}
+}
+
 func TestNewAgent_CustomModel(t *testing.T) {
-	agent, err := NewAgent("test-key", "claude-opus-4-6", testProjectContext(), nil, nil)
+	agent, err := NewAgent("test-key", "claude-opus-4-6", testProjectContext(), nil, nil, 0)
 	if err != nil {
 		t.Fatalf("NewAgent: unexpected error: %v", err)
 	}
@@ -92,7 +112,7 @@ func TestNewAgent_CustomModel(t *testing.T) {
 }
 
 func TestNewAgent_EmptyAPIKey(t *testing.T) {
-	_, err := NewAgent("", "", testProjectContext(), nil, nil)
+	_, err := NewAgent("", "", testProjectContext(), nil, nil, 0)
 	if err == nil {
 		t.Fatal("expected error for empty API key, got nil")
 	}
@@ -103,7 +123,7 @@ func TestNewAgent_EmptyAPIKey(t *testing.T) {
 }
 
 func TestNewAgent_NilLogger(t *testing.T) {
-	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil)
+	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil, 0)
 	if err != nil {
 		t.Fatalf("NewAgent: unexpected error: %v", err)
 	}
@@ -153,7 +173,7 @@ func TestBuildSystemPrompt_NilPrefs(t *testing.T) {
 }
 
 func TestAgent_History_Empty(t *testing.T) {
-	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil)
+	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil, 0)
 	if err != nil {
 		t.Fatalf("NewAgent: %v", err)
 	}
@@ -165,7 +185,7 @@ func TestAgent_History_Empty(t *testing.T) {
 }
 
 func TestAgent_Reset(t *testing.T) {
-	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil)
+	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil, 0)
 	if err != nil {
 		t.Fatalf("NewAgent: %v", err)
 	}
@@ -185,7 +205,7 @@ func TestAgent_Reset(t *testing.T) {
 }
 
 func TestAgent_SetTools(t *testing.T) {
-	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil)
+	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil, 0)
 	if err != nil {
 		t.Fatalf("NewAgent: %v", err)
 	}
@@ -219,7 +239,7 @@ func TestAgent_SetTools(t *testing.T) {
 }
 
 func TestAgent_SystemPrompt(t *testing.T) {
-	agent, err := NewAgent("test-key", "", testProjectContext(), testPreferences(), nil)
+	agent, err := NewAgent("test-key", "", testProjectContext(), testPreferences(), nil, 0)
 	if err != nil {
 		t.Fatalf("NewAgent: %v", err)
 	}
@@ -331,7 +351,7 @@ func newMockAgent(t *testing.T, transport http.RoundTripper) *Agent {
 	t.Helper()
 	agent, err := NewAgent(
 		"test-key", "",
-		testProjectContext(), nil, nil,
+		testProjectContext(), nil, nil, 0,
 		option.WithHTTPClient(&http.Client{Transport: transport}),
 		option.WithMaxRetries(0),
 	)

@@ -25,6 +25,8 @@ type Config struct {
 	Security SecurityConfig `yaml:"security" json:"security"`
 	// Context configures the orchestrator context budget.
 	Context ContextConfig `yaml:"context" json:"context,omitempty"`
+	// Planner configures the planning agent.
+	Planner PlannerConfig `yaml:"planner" json:"planner,omitempty"`
 	// GenericPlugins maps custom plugin names to their regex-based configuration.
 	GenericPlugins map[string]GenericPluginConfig `yaml:"generic_plugins" json:"generic_plugins,omitempty"`
 }
@@ -102,6 +104,13 @@ type SecurityConfig struct {
 	AllowedPaths []string `yaml:"allowed_paths" json:"allowed_paths,omitempty"`
 	// DeniedPaths blocks file operations on these paths (glob or prefix with trailing /).
 	DeniedPaths []string `yaml:"denied_paths" json:"denied_paths,omitempty"`
+}
+
+// PlannerConfig configures the planning agent.
+type PlannerConfig struct {
+	// MaxTokens is the maximum output tokens for planner API calls.
+	// Zero means use the default (16384).
+	MaxTokens int `yaml:"max_tokens" json:"max_tokens,omitempty"`
 }
 
 // ContextConfig configures the orchestrator context budget for prompt injection.
@@ -228,8 +237,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 
 	intOverrides := map[string]*int{
-		"CRUX_SECURITY_MAX_CMDS_PER_MIN":    &cfg.Security.MaxCmdsPerMin,
+		"CRUX_SECURITY_MAX_CMDS_PER_MIN":      &cfg.Security.MaxCmdsPerMin,
 		"CRUX_SECURITY_MAX_FILES_PER_SESSION": &cfg.Security.MaxFilesPerSession,
+		"CRUX_PLANNER_MAX_TOKENS":             &cfg.Planner.MaxTokens,
 	}
 
 	for env, field := range intOverrides {

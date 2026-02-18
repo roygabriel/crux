@@ -567,7 +567,7 @@ func TestExecuteTool_DispatchesCorrectly(t *testing.T) {
 // --- RegisterTools test ---
 
 func TestRegisterTools_RegistersThreeTools(t *testing.T) {
-	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil)
+	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil, 0)
 	if err != nil {
 		t.Fatalf("NewAgent: %v", err)
 	}
@@ -589,6 +589,57 @@ func TestRegisterTools_RegistersThreeTools(t *testing.T) {
 		if !names[expected] {
 			t.Errorf("missing tool: %s", expected)
 		}
+	}
+}
+
+func TestRegisterTools_SetsRequired(t *testing.T) {
+	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil, 0)
+	if err != nil {
+		t.Fatalf("NewAgent: %v", err)
+	}
+
+	RegisterTools(agent, t.TempDir())
+
+	for _, tool := range agent.tools {
+		if tool.OfTool == nil {
+			continue
+		}
+		if len(tool.OfTool.InputSchema.Required) == 0 {
+			t.Errorf("tool %q: Required should not be empty", tool.OfTool.Name)
+		}
+	}
+}
+
+func TestExtractPropertyNames(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+		want   int
+	}{
+		{
+			name:   "two properties",
+			schema: `{"a": {"type":"string"}, "b": {"type":"number"}}`,
+			want:   2,
+		},
+		{
+			name:   "single property",
+			schema: `{"path": {"type":"string"}}`,
+			want:   1,
+		},
+		{
+			name:   "invalid json",
+			schema: `not json`,
+			want:   0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			names := extractPropertyNames(json.RawMessage(tc.schema))
+			if len(names) != tc.want {
+				t.Errorf("extractPropertyNames returned %d names, want %d", len(names), tc.want)
+			}
+		})
 	}
 }
 

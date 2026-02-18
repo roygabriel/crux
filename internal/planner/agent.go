@@ -14,6 +14,9 @@ import (
 // DefaultModel is the model used when none is specified.
 const DefaultModel = "claude-sonnet-4-5-20250929"
 
+// defaultMaxTokens is the fallback output token limit when none is configured.
+const defaultMaxTokens = 16384
+
 // Message is a display-friendly representation of a conversation turn.
 type Message struct {
 	// Role is "user" or "assistant".
@@ -55,12 +58,13 @@ type Agent struct {
 	tools        []anthropic.ToolUnionParam
 	logger       *slog.Logger
 	opts         []option.RequestOption
+	maxTokens    int
 }
 
 // NewAgent creates a new planning agent. It validates the API key, builds the
 // system prompt from project context and preferences, and initialises the
 // Anthropic client.
-func NewAgent(apiKey, model string, projectCtx ProjectContext, p *prefs.Preferences, logger *slog.Logger, extraOpts ...option.RequestOption) (*Agent, error) {
+func NewAgent(apiKey, model string, projectCtx ProjectContext, p *prefs.Preferences, logger *slog.Logger, maxTokens int, extraOpts ...option.RequestOption) (*Agent, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("planner: API key is required (set CRUX_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY)")
 	}
@@ -86,6 +90,7 @@ func NewAgent(apiKey, model string, projectCtx ProjectContext, p *prefs.Preferen
 		history:      make([]anthropic.MessageParam, 0),
 		logger:       logger,
 		opts:         opts,
+		maxTokens:    maxTokens,
 	}, nil
 }
 
@@ -144,9 +149,14 @@ func (a *Agent) SystemPrompt() string {
 // message, sends text deltas and tool use chunks, and appends the completed
 // message to history.
 func (a *Agent) stream(ctx context.Context) (<-chan StreamChunk, error) {
+	maxTok := a.maxTokens
+	if maxTok <= 0 {
+		maxTok = defaultMaxTokens
+	}
+
 	params := anthropic.MessageNewParams{
 		Model:     a.model,
-		MaxTokens: 8192,
+		MaxTokens: int64(maxTok),
 		System: []anthropic.TextBlockParam{
 			{Text: a.systemPrompt},
 		},
@@ -207,6 +217,13 @@ func (a *Agent) stream(ctx context.Context) (<-chan StreamChunk, error) {
 					}
 				}
 			}
+		}
+
+		if msg.StopReason == anthropic.StopReasonMaxTokens {
+			ch <- StreamChunk{
+				Err: fmt.Errorf("response truncated: max_tokens (%d) reached — increase planner.max_tokens in config or set CRUX_PLANNER_MAX_TOKENS", maxTok),
+			}
+			return
 		}
 
 		ch <- StreamChunk{Done: true}

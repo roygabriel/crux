@@ -12,7 +12,7 @@ import (
 
 func newTestTUIModel(t *testing.T) TUIModel {
 	t.Helper()
-	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil)
+	agent, err := NewAgent("test-key", "", testProjectContext(), nil, nil, 0)
 	if err != nil {
 		t.Fatalf("NewAgent: %v", err)
 	}
@@ -111,6 +111,24 @@ func TestTUIModel_StreamDone(t *testing.T) {
 	}
 	if model.messages[1].rendered == "" {
 		t.Error("assistant message should have glamour-rendered content")
+	}
+}
+
+func TestTUIModel_StreamDone_EmptyBuffer(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+
+	m.messages = append(m.messages, chatMessage{role: "user", content: "hello"})
+	m.streaming = true
+	// streamBuf is empty — no text was received before done.
+
+	updated, _ := m.Update(StreamDoneMsg{})
+	model := updated.(TUIModel)
+
+	if model.streaming {
+		t.Error("streaming should be false after StreamDoneMsg")
+	}
+	if len(model.messages) != 1 {
+		t.Errorf("expected 1 message (user only), got %d", len(model.messages))
 	}
 }
 

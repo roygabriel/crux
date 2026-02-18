@@ -231,7 +231,7 @@ func offerPlanningAgent(cfgPath, cruxDir string) error {
 		}
 	}
 
-	agent, err := planner.NewAgent(apiKey, "", projectCtx, preferences, log)
+	agent, err := planner.NewAgent(apiKey, "", projectCtx, preferences, log, 0)
 	if err != nil {
 		return fmt.Errorf("create planning agent: %w", err)
 	}

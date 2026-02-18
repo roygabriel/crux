@@ -157,12 +157,14 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Finalize the assistant message with glamour rendering.
 		raw := m.streamBuf.String()
 		m.streamBuf.Reset()
-		rendered := m.renderMarkdown(raw)
-		m.messages = append(m.messages, chatMessage{
-			role:     "assistant",
-			content:  raw,
-			rendered: rendered,
-		})
+		if raw != "" {
+			rendered := m.renderMarkdown(raw)
+			m.messages = append(m.messages, chatMessage{
+				role:     "assistant",
+				content:  raw,
+				rendered: rendered,
+			})
+		}
 		m.refreshViewport()
 		cmds = append(cmds, m.input.Focus())
 

@@ -36,18 +36,33 @@ func RegisterTools(agent *Agent, projectRoot string) {
 
 	toolDefs := make([]anthropic.ToolUnionParam, len(handlers))
 	for i, h := range handlers {
+		schema := h.InputSchema()
 		toolDefs[i] = anthropic.ToolUnionParam{
 			OfTool: &anthropic.ToolParam{
 				Name:        h.Name(),
 				Description: anthropic.String(h.Description()),
 				InputSchema: anthropic.ToolInputSchemaParam{
-					Properties: json.RawMessage(h.InputSchema()),
+					Properties: json.RawMessage(schema),
+					Required:   extractPropertyNames(schema),
 				},
 			},
 		}
 	}
 
 	agent.SetTools(toolDefs)
+}
+
+// extractPropertyNames parses a JSON object and returns its top-level keys.
+func extractPropertyNames(schema json.RawMessage) []string {
+	var props map[string]json.RawMessage
+	if err := json.Unmarshal(schema, &props); err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(props))
+	for k := range props {
+		names = append(names, k)
+	}
+	return names
 }
 
 // ExecuteTool dispatches a tool call by name. It returns the result string and

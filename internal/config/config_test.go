@@ -104,6 +104,57 @@ memory:
 	}
 }
 
+func TestLoadPlannerEnvOverride(t *testing.T) {
+	yaml := `
+project:
+  name: "test"
+  root: "."
+  state_dir: ".crux"
+
+memory:
+  sqlite_path: ".crux/memory.db"
+  vector_dir: ".crux/vectors"
+`
+	path := writeTempYAML(t, yaml)
+
+	t.Setenv("CRUX_PLANNER_MAX_TOKENS", "32768")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.Planner.MaxTokens != 32768 {
+		t.Errorf("Planner.MaxTokens = %d, want %d", cfg.Planner.MaxTokens, 32768)
+	}
+}
+
+func TestLoadPlannerYAML(t *testing.T) {
+	yaml := `
+project:
+  name: "test"
+  root: "."
+  state_dir: ".crux"
+
+memory:
+  sqlite_path: ".crux/memory.db"
+  vector_dir: ".crux/vectors"
+
+planner:
+  max_tokens: 24000
+`
+	path := writeTempYAML(t, yaml)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.Planner.MaxTokens != 24000 {
+		t.Errorf("Planner.MaxTokens = %d, want %d", cfg.Planner.MaxTokens, 24000)
+	}
+}
+
 func TestValidateMissingRequiredFields(t *testing.T) {
 	t.Parallel()
 

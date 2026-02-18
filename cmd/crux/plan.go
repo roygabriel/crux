@@ -77,7 +77,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	// Initialize agent.
-	agent, err := planner.NewAgent(apiKey, "", projectCtx, preferences, log)
+	agent, err := planner.NewAgent(apiKey, "", projectCtx, preferences, log, cfg.Planner.MaxTokens)
 	if err != nil {
 		return fmt.Errorf("create planning agent: %w", err)
 	}

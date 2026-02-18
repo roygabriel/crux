@@ -186,6 +186,12 @@ func runWithTUI(
 ) error {
 	bridge := tui.NewStateBridge(1)
 	logBridge := tui.NewLogBridge(64)
+
+	// Redirect slog output into the TUI log panel.
+	tuiLogger := slog.New(logBridge)
+	slog.SetDefault(tuiLogger)
+	logger = tuiLogger
+
 	commandBus := tui.NewCommandBus(16, logger)
 	worldState := orch.WorldState()
 

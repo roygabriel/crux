@@ -57,3 +57,8 @@ man/
 completions/
 public/
 docs/site/resources/
+
+# Docusaurus
+site/node_modules/
+site/build/
+site/.docusaurus/

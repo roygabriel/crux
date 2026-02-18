@@ -1,0 +1,29 @@
+# Crux orchestrator default configuration.
+# Override any value with CRUX_ environment variables.
+# Example: CRUX_MEMORY_SQLITE_PATH overrides memory.sqlite_path.
+
+project:
+  name: "my-project"
+  root: "."
+  state_dir: ".crux"
+
+agents: {}
+  # example:
+  #   engineer-1:
+  #     plugin: claude
+  #     role: engineer
+  #     permission: standard
+  #     model: ""
+
+memory:
+  sqlite_path: ".crux/memory.db"
+  vector_dir: ".crux/vectors"
+
+phases:
+  spec_dir: "docs/phases"
+
+security:
+  audit_log: ".crux/audit.log"
+  max_cmds_per_min: 60
+  max_files_per_session: 100
+  allowed_paths: []

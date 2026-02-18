@@ -1,0 +1,173 @@
+/**
+ * Crux Documentation — Custom Theme
+ * Indigo/cyan palette with modern typography
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ─── Light Mode ─── */
+:root {
+  --ifm-color-primary: #4F46E5;
+  --ifm-color-primary-dark: #4338CA;
+  --ifm-color-primary-darker: #3730A3;
+  --ifm-color-primary-darkest: #312E81;
+  --ifm-color-primary-light: #6366F1;
+  --ifm-color-primary-lighter: #818CF8;
+  --ifm-color-primary-lightest: #A5B4FC;
+
+  --ifm-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --ifm-heading-font-weight: 700;
+  --ifm-code-font-size: 90%;
+  --ifm-code-border-radius: 6px;
+
+  --ifm-global-radius: 8px;
+  --ifm-navbar-height: 64px;
+
+  --docusaurus-highlighted-code-line-bg: rgba(79, 70, 229, 0.1);
+
+  --crux-accent: #06B6D4;
+  --crux-gradient-start: #4F46E5;
+  --crux-gradient-end: #06B6D4;
+  --crux-surface: #F8FAFC;
+  --crux-surface-raised: #FFFFFF;
+  --crux-text-muted: #64748B;
+}
+
+/* ─── Dark Mode ─── */
+[data-theme='dark'] {
+  --ifm-color-primary: #818CF8;
+  --ifm-color-primary-dark: #6366F1;
+  --ifm-color-primary-darker: #4F46E5;
+  --ifm-color-primary-darkest: #4338CA;
+  --ifm-color-primary-light: #A5B4FC;
+  --ifm-color-primary-lighter: #C7D2FE;
+  --ifm-color-primary-lightest: #E0E7FF;
+
+  --docusaurus-highlighted-code-line-bg: rgba(129, 140, 248, 0.15);
+
+  --crux-accent: #22D3EE;
+  --crux-gradient-start: #818CF8;
+  --crux-gradient-end: #22D3EE;
+  --crux-surface: #0F172A;
+  --crux-surface-raised: #1E293B;
+  --crux-text-muted: #94A3B8;
+}
+
+/* ─── Global Styles ─── */
+html {
+  scroll-behavior: smooth;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.02em;
+}
+
+.navbar {
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='dark'] .navbar {
+  background: rgba(15, 23, 42, 0.85);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.navbar__title {
+  font-weight: 800;
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+}
+
+/* ─── Code Blocks ─── */
+.prism-code {
+  border-radius: 10px !important;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+pre {
+  border-radius: 10px !important;
+}
+
+code {
+  border-radius: 4px;
+  padding: 0.15em 0.35em;
+}
+
+/* ─── Sidebar ─── */
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--ifm-toc-border-color);
+}
+
+.menu__link {
+  font-size: 0.9rem;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.menu__link:hover {
+  background: rgba(79, 70, 229, 0.08);
+}
+
+.menu__link--active {
+  font-weight: 600;
+}
+
+/* ─── Footer ─── */
+.footer {
+  background: var(--crux-surface) !important;
+  border-top: 1px solid var(--ifm-toc-border-color);
+}
+
+[data-theme='dark'] .footer {
+  background: #0B1120 !important;
+}
+
+.footer__title {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+}
+
+/* ─── Tables ─── */
+table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+th {
+  background: rgba(79, 70, 229, 0.06);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+[data-theme='dark'] th {
+  background: rgba(129, 140, 248, 0.1);
+}
+
+/* ─── Admonitions ─── */
+.alert {
+  border-radius: 10px;
+}
+
+/* ─── Scrollbar (dark mode) ─── */
+[data-theme='dark'] ::-webkit-scrollbar {
+  width: 8px;
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-track {
+  background: #0F172A;
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}

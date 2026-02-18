@@ -435,13 +435,14 @@ crux audit --since 24h             View audit log with filters
 Full documentation is available at [roygabriel.github.io/crux](https://roygabriel.github.io/crux/) or can be built locally:
 
 ```bash
-make docs-gen     # Generate CLI reference
-make docs-serve   # Start local Hugo server
+cd site
+npm install
+npm start        # Start local dev server at http://localhost:3000/crux/
 ```
 
-- [Architecture](docs/site/content/concepts/architecture.md) — six-layer stack overview
-- [Configuration Reference](docs/site/content/reference/configuration.md) — every config key explained
-- [Troubleshooting](docs/TROUBLESHOOTING.md) — common issues and solutions
+- [Architecture](site/docs/concepts/architecture.md) — six-layer stack overview
+- [Configuration Reference](site/docs/reference/configuration.md) — every config key explained
+- [Troubleshooting](site/docs/troubleshooting.md) — common issues and solutions
 
 ## Dependencies
 

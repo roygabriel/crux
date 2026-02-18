@@ -28,7 +28,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var tuiFlag bool
+var headlessFlag bool
 
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -152,21 +152,20 @@ var startCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
 
-		if tuiFlag {
-			return runWithTUI(ctx, stop, orch, registry, engine, messenger, rateLimiter, tracker, auditLogger, j, notesMgr, log)
+		if headlessFlag {
+			// Headless mode: run orchestrator without TUI.
+			if err := orch.Run(ctx); err != nil {
+				return fmt.Errorf("orchestrator: %w", err)
+			}
+			return orch.Stop(context.Background())
 		}
 
-		// Headless mode.
-		if err := orch.Run(ctx); err != nil {
-			return fmt.Errorf("orchestrator: %w", err)
-		}
-
-		return orch.Stop(context.Background())
+		return runWithTUI(ctx, stop, orch, registry, engine, messenger, rateLimiter, tracker, auditLogger, j, notesMgr, log)
 	},
 }
 
 func init() {
-	startCmd.Flags().BoolVar(&tuiFlag, "tui", false, "Launch terminal dashboard")
+	startCmd.Flags().BoolVar(&headlessFlag, "headless", false, "Run without the terminal dashboard (for CI/scripting)")
 }
 
 // runWithTUI starts the orchestrator in a background goroutine and runs the

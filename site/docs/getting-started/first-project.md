@@ -1,6 +1,7 @@
 ---
 sidebar_position: 2
 title: Your First Project
+description: Step-by-step walkthrough to create your first Crux project. Initialize with the HTTP API example, configure agents, inspect phases, start orchestration, and monitor progress.
 ---
 
 # Your First Project

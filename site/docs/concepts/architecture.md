@@ -1,6 +1,7 @@
 ---
 sidebar_position: 1
 title: Architecture
+description: Six-layer architecture of Crux, from the orchestrator control loop to tmux transport. Covers the phase engine, memory system, agent manager, security layer, and plugin system.
 ---
 
 # Architecture

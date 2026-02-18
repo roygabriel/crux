@@ -1,6 +1,7 @@
 ---
 sidebar_position: 3
 title: Memory System
+description: Three-layer memory in Crux. Markdown bank for human-readable context, SQLite with FTS5 for structured search, and chromem-go vector index for semantic similarity over decisions.
 ---
 
 # Memory System

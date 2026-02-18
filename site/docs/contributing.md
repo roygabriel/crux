@@ -1,6 +1,7 @@
 ---
 sidebar_position: 101
 title: Contributing
+description: How to contribute to Crux. Development setup, building, testing, code quality checks, Go conventions, project structure, commit message format, and PR checklist.
 ---
 
 # Contributing

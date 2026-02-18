@@ -1,6 +1,7 @@
 ---
 sidebar_position: 2
 title: Multi-Agent Workflows
+description: Run multiple AI coding agents in parallel with Crux. Covers agent configuration, parallel phase requirements, git branch strategy, agent roles, and conflict resolution.
 ---
 
 # Multi-Agent Workflows

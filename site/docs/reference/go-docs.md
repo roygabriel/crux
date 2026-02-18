@@ -1,6 +1,7 @@
 ---
 sidebar_position: 4
 title: Go Docs
+description: Go package reference for Crux. Package overview, key types, and links to pkg.go.dev documentation for all internal and public packages.
 ---
 
 # Go Documentation

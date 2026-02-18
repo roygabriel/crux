@@ -1,6 +1,7 @@
 ---
 sidebar_position: 2
 title: Roles
+description: Built-in agent role definitions in Crux. Engineer, Orchestrator, and Reviewer roles with their rules and behaviors for multi-agent coordination.
 ---
 
 # Role Definitions

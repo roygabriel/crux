@@ -1,0 +1,35 @@
+# Crux
+
+> Crux is an open-source Go CLI that orchestrates multiple AI coding agents (Claude Code, Codex CLI, Gemini CLI) running in tmux sessions with phase-based execution, persistent memory, and verification gates.
+
+## What Crux Does
+
+Crux coordinates multiple AI coding agents working simultaneously on a codebase. It manages them through tmux sessions, assigns tasks via a phase-based workflow system, tracks every decision in a searchable memory system, and enforces verification gates before advancing.
+
+## Key Concepts
+
+- **Phase Engine**: Two-document system (spec + prompt doc) defining what to build and how. Phases have dependencies, file lists, and exit criteria (go build, go test, go vet must pass).
+- **Memory System**: Three layers: markdown memory bank for human-readable context, SQLite with FTS5 for structured data, and chromem-go vector index for semantic search over decisions.
+- **Agent Plugins**: Each CLI tool implements the AgentPlugin Go interface. Ships with adapters for Claude Code, Codex CLI, Gemini CLI, and a configurable Generic adapter.
+- **Security Model**: Four-tier permissions (readonly, standard, elevated, autonomous), filesystem sandboxing, structured audit logging, and per-agent rate limiting.
+- **Orchestrator Loop**: Polls agent tmux panes every 1-2 seconds, updates world state, checks for completed prompts, runs verification gates, and advances phases.
+
+## Documentation
+
+- Getting Started: https://roygabriel.github.io/crux/docs/getting-started/installation
+- Architecture: https://roygabriel.github.io/crux/docs/concepts/architecture
+- Configuration: https://roygabriel.github.io/crux/docs/reference/configuration
+- CLI Reference: https://roygabriel.github.io/crux/docs/reference/cli
+- Writing Phases: https://roygabriel.github.io/crux/docs/guides/writing-phases
+- Multi-Agent Workflows: https://roygabriel.github.io/crux/docs/guides/multi-agent
+- Custom Plugins: https://roygabriel.github.io/crux/docs/guides/custom-plugins
+- Memory System: https://roygabriel.github.io/crux/docs/concepts/memory
+- Phase System: https://roygabriel.github.io/crux/docs/concepts/phase-system
+- Security Model: https://roygabriel.github.io/crux/docs/concepts/security
+
+## Source Code
+
+- GitHub: https://github.com/roygabriel/crux
+- License: MIT
+- Language: Go
+- Issues: https://github.com/roygabriel/crux/issues

@@ -1,6 +1,7 @@
 ---
 sidebar_position: 4
 title: Security Model
+description: Crux security model with four permission tiers, filesystem sandboxing, structured audit logging, per-agent rate limiting, and git branch safety for agent commits.
 ---
 
 # Security Model

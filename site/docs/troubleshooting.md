@@ -1,6 +1,7 @@
 ---
 sidebar_position: 100
 title: Troubleshooting
+description: Solutions for common Crux issues. Covers tmux not found, missing phase specs, unresponsive agents, rate limiting, SQLite database locks, and empty vector search results.
 ---
 
 # Troubleshooting

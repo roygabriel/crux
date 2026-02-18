@@ -1,6 +1,7 @@
 ---
 sidebar_position: 1
 title: Writing Phases
+description: How to write phase specs and prompt docs for Crux. Covers scaffolding, dependencies, design rationale, task definitions, file lists, exit criteria, and validation.
 ---
 
 # Writing Phases

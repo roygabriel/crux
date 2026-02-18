@@ -1,6 +1,7 @@
 ---
 sidebar_position: 1
 title: Installation
+description: Install Crux from source, go install, or the curl installer. Covers tmux prerequisites, shell completions for bash/zsh/fish/PowerShell, and man page generation.
 ---
 
 # Installation

@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1C1917"/>
+      <stop offset="100%" stop-color="#292524"/>
+    </linearGradient>
+    <linearGradient id="text-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#0D9488"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#2DD4BF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Decorative circles -->
+  <circle cx="950" cy="180" r="120" fill="none" stroke="url(#accent)" stroke-width="1.5" opacity="0.15"/>
+  <circle cx="950" cy="180" r="80" fill="none" stroke="url(#accent)" stroke-width="1" opacity="0.1"/>
+  <circle cx="250" cy="500" r="90" fill="none" stroke="url(#accent)" stroke-width="1" opacity="0.08"/>
+
+  <!-- Logo mark -->
+  <circle cx="120" cy="260" r="24" fill="url(#text-grad)"/>
+  <circle cx="120" cy="260" r="50" stroke="url(#text-grad)" stroke-width="2" fill="none" opacity="0.4"/>
+  <circle cx="120" cy="210" r="10" fill="url(#accent)" opacity="0.8"/>
+  <circle cx="80" cy="290" r="10" fill="url(#accent)" opacity="0.8"/>
+  <circle cx="160" cy="290" r="10" fill="url(#accent)" opacity="0.8"/>
+
+  <!-- Title -->
+  <text x="200" y="275" font-family="system-ui, -apple-system, sans-serif" font-size="96" font-weight="800" fill="url(#text-grad)" letter-spacing="-4">Crux</text>
+
+  <!-- Subtitle -->
+  <text x="120" y="340" font-family="system-ui, -apple-system, sans-serif" font-size="28" fill="#A8A29E" font-weight="500">Multi-Agent AI Orchestrator</text>
+
+  <!-- Description -->
+  <text x="120" y="400" font-family="system-ui, -apple-system, sans-serif" font-size="20" fill="#78716C">Coordinate AI coding agents in tmux sessions</text>
+  <text x="120" y="430" font-family="system-ui, -apple-system, sans-serif" font-size="20" fill="#78716C">with phase-based workflows and persistent memory</text>
+
+  <!-- Bottom tags -->
+  <rect x="120" y="490" width="60" height="28" rx="6" fill="#D97706" opacity="0.15"/>
+  <text x="150" y="509" font-family="system-ui, sans-serif" font-size="14" fill="#D97706" text-anchor="middle" font-weight="600">Go</text>
+
+  <rect x="195" y="490" width="70" height="28" rx="6" fill="#0D9488" opacity="0.15"/>
+  <text x="230" y="509" font-family="system-ui, sans-serif" font-size="14" fill="#0D9488" text-anchor="middle" font-weight="600">tmux</text>
+
+  <rect x="280" y="490" width="50" height="28" rx="6" fill="#FBBF24" opacity="0.15"/>
+  <text x="305" y="509" font-family="system-ui, sans-serif" font-size="14" fill="#FBBF24" text-anchor="middle" font-weight="600">MIT</text>
+</svg>

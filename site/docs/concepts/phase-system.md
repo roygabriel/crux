@@ -1,6 +1,7 @@
 ---
 sidebar_position: 2
 title: Phase System
+description: Two-document phase system in Crux. Phase specs define scope, dependencies, and exit criteria. Prompt docs define the exact execution contract for each agent task.
 ---
 
 # The Two-Document Phase System

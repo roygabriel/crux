@@ -1,6 +1,7 @@
 ---
 sidebar_position: 3
 title: CLI Reference
+description: Complete CLI reference for the crux command. Covers init, start, phase, status, decisions, notes, audit, and completion subcommands with all flags and options.
 ---
 
 # CLI Reference

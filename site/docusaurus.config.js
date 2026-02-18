@@ -3,8 +3,8 @@ import { themes as prismThemes } from 'prism-react-renderer';
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Crux',
-  tagline: 'Orchestrate AI coding agents with persistent memory',
+  title: 'Crux - Multi-Agent AI Orchestrator',
+  tagline: 'Coordinate AI coding agents in tmux sessions with phase-based workflows, persistent memory, and verification gates.',
   favicon: 'img/favicon.svg',
 
   future: {
@@ -30,6 +30,51 @@ const config = {
     locales: ['en'],
   },
 
+  headTags: [
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'keywords',
+        content: 'AI agent orchestration, multi-agent, Claude Code, Codex CLI, Gemini CLI, tmux, Go, CLI tool, phase-based workflows, persistent memory, coding agents',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'author',
+        content: 'Roy Gabriel',
+      },
+    },
+    {
+      tagName: 'script',
+      attributes: {
+        type: 'application/ld+json',
+      },
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: 'Crux',
+        description: 'Open-source Go CLI that orchestrates multiple AI coding agents running in tmux sessions with phase-based execution, persistent memory, and verification gates.',
+        applicationCategory: 'DeveloperApplication',
+        operatingSystem: 'Linux, macOS',
+        programmingLanguage: 'Go',
+        license: 'https://opensource.org/licenses/MIT',
+        url: 'https://roygabriel.github.io/crux/',
+        codeRepository: 'https://github.com/roygabriel/crux',
+        author: {
+          '@type': 'Person',
+          name: 'Roy Gabriel',
+          url: 'https://github.com/roygabriel',
+        },
+        offers: {
+          '@type': 'Offer',
+          price: '0',
+          priceCurrency: 'USD',
+        },
+      }),
+    },
+  ],
+
   presets: [
     [
       'classic',
@@ -43,6 +88,11 @@ const config = {
         theme: {
           customCss: './src/css/custom.css',
         },
+        sitemap: {
+          changefreq: 'weekly',
+          priority: 0.5,
+          filename: 'sitemap.xml',
+        },
       }),
     ],
   ],
@@ -50,7 +100,14 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      image: 'img/crux-social-card.png',
+      image: 'img/crux-social-card.svg',
+      metadata: [
+        { name: 'twitter:card', content: 'summary_large_image' },
+        { name: 'twitter:title', content: 'Crux - Multi-Agent AI Orchestrator' },
+        { name: 'twitter:description', content: 'Coordinate AI coding agents in tmux sessions with phase-based workflows, persistent memory, and verification gates.' },
+        { property: 'og:type', content: 'website' },
+        { property: 'og:site_name', content: 'Crux' },
+      ],
       colorMode: {
         defaultMode: 'dark',
         respectPrefersColorScheme: true,
@@ -58,7 +115,7 @@ const config = {
       navbar: {
         title: 'Crux',
         logo: {
-          alt: 'Crux Logo',
+          alt: 'Crux - Multi-Agent AI Orchestrator Logo',
           src: 'img/logo.svg',
         },
         items: [

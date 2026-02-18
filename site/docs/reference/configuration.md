@@ -1,6 +1,7 @@
 ---
 sidebar_position: 1
 title: Configuration
+description: Full YAML configuration reference for Crux. Covers project settings, agent definitions, memory backends, phase directories, security controls, context budgets, and generic plugins.
 ---
 
 # Configuration Reference

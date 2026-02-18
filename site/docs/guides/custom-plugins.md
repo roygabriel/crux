@@ -1,6 +1,7 @@
 ---
 sidebar_position: 3
 title: Custom Plugins
+description: Add support for any CLI tool as a Crux agent. Use the regex-based Generic plugin or write a Go adapter implementing the AgentPlugin interface.
 ---
 
 # Custom Plugins

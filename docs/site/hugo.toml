@@ -1,0 +1,16 @@
+baseURL = "https://roygabriel.github.io/crux/"
+languageCode = "en-us"
+title = "Crux Documentation"
+theme = "hugo-book"
+
+[params]
+  BookSection = "/"
+  BookToC = true
+  BookMenuBundle = "/menu"
+
+[markup]
+  [markup.highlight]
+    style = "monokai"
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true

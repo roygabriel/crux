@@ -77,13 +77,27 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	// Initialize agent.
-	agent, err := planner.NewAgent(apiKey, "", projectCtx, preferences, log, cfg.Planner.MaxTokens)
-	if err != nil {
-		return fmt.Errorf("create planning agent: %w", err)
-	}
+	var agent *planner.Agent
+	switch cfg.Planner.Agent {
+	case "", "sdk":
+		a, agentErr := planner.NewAgent(apiKey, "", projectCtx, preferences, log, cfg.Planner.MaxTokens)
+		if agentErr != nil {
+			return fmt.Errorf("create planning agent: %w", agentErr)
+		}
+		planner.RegisterTools(a, projectRoot)
+		agent = a
 
-	// Register tools.
-	planner.RegisterTools(agent, projectRoot)
+	case "claude", "codex", "gemini":
+		systemPrompt := planner.BuildSystemPrompt(projectCtx, preferences)
+		backend, backendErr := planner.NewCLIBackend(cfg.Planner.Agent, systemPrompt, projectRoot, log)
+		if backendErr != nil {
+			return fmt.Errorf("create CLI backend: %w", backendErr)
+		}
+		agent = planner.NewAgentWithBackend(backend)
+
+	default:
+		return fmt.Errorf("unknown planner agent %q (supported: sdk, claude, codex, gemini)", cfg.Planner.Agent)
+	}
 
 	// Create TUI model.
 	model := planner.NewTUIModel(agent, projectRoot)

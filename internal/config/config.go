@@ -112,6 +112,10 @@ type PlannerConfig struct {
 	// Zero means use the default (16384) with graceful truncation handling.
 	// Set an explicit value to enforce a hard limit.
 	MaxTokens int `yaml:"max_tokens" json:"max_tokens,omitempty"`
+	// Agent selects the conversation backend. Empty or "sdk" uses the
+	// Anthropic SDK directly. "claude", "codex", or "gemini" uses the
+	// corresponding CLI agent as a subprocess.
+	Agent string `yaml:"agent" json:"agent,omitempty"`
 }
 
 // ContextConfig configures the orchestrator context budget for prompt injection.
@@ -232,6 +236,16 @@ func applyEnvOverrides(cfg *Config) {
 	}
 
 	for env, field := range overrides {
+		if v, ok := os.LookupEnv(env); ok {
+			*field = v
+		}
+	}
+
+	// String overrides for planner config.
+	plannerStringOverrides := map[string]*string{
+		"CRUX_PLANNER_AGENT": &cfg.Planner.Agent,
+	}
+	for env, field := range plannerStringOverrides {
 		if v, ok := os.LookupEnv(env); ok {
 			*field = v
 		}

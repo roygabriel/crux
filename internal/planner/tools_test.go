@@ -574,12 +574,12 @@ func TestRegisterTools_RegistersThreeTools(t *testing.T) {
 
 	RegisterTools(agent, t.TempDir())
 
-	if len(agent.tools) != 3 {
-		t.Fatalf("expected 3 tools, got %d", len(agent.tools))
+	if len(agent.sdkBackend.tools) != 3 {
+		t.Fatalf("expected 3 tools, got %d", len(agent.sdkBackend.tools))
 	}
 
 	names := make(map[string]bool)
-	for _, tool := range agent.tools {
+	for _, tool := range agent.sdkBackend.tools {
 		if tool.OfTool != nil {
 			names[tool.OfTool.Name] = true
 		}
@@ -600,7 +600,7 @@ func TestRegisterTools_SetsRequired(t *testing.T) {
 
 	RegisterTools(agent, t.TempDir())
 
-	for _, tool := range agent.tools {
+	for _, tool := range agent.sdkBackend.tools {
 		if tool.OfTool == nil {
 			continue
 		}

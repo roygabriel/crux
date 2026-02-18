@@ -155,6 +155,80 @@ planner:
 	}
 }
 
+func TestLoadPlannerAgentYAML(t *testing.T) {
+	yaml := `
+project:
+  name: "test"
+  root: "."
+  state_dir: ".crux"
+
+memory:
+  sqlite_path: ".crux/memory.db"
+  vector_dir: ".crux/vectors"
+
+planner:
+  agent: claude
+`
+	path := writeTempYAML(t, yaml)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.Planner.Agent != "claude" {
+		t.Errorf("Planner.Agent = %q, want %q", cfg.Planner.Agent, "claude")
+	}
+}
+
+func TestLoadPlannerAgentEnvOverride(t *testing.T) {
+	yaml := `
+project:
+  name: "test"
+  root: "."
+  state_dir: ".crux"
+
+memory:
+  sqlite_path: ".crux/memory.db"
+  vector_dir: ".crux/vectors"
+`
+	path := writeTempYAML(t, yaml)
+
+	t.Setenv("CRUX_PLANNER_AGENT", "gemini")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.Planner.Agent != "gemini" {
+		t.Errorf("Planner.Agent = %q, want %q", cfg.Planner.Agent, "gemini")
+	}
+}
+
+func TestLoadPlannerAgentDefault(t *testing.T) {
+	yaml := `
+project:
+  name: "test"
+  root: "."
+  state_dir: ".crux"
+
+memory:
+  sqlite_path: ".crux/memory.db"
+  vector_dir: ".crux/vectors"
+`
+	path := writeTempYAML(t, yaml)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.Planner.Agent != "" {
+		t.Errorf("Planner.Agent = %q, want empty (default)", cfg.Planner.Agent)
+	}
+}
+
 func TestValidateMissingRequiredFields(t *testing.T) {
 	t.Parallel()
 

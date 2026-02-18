@@ -67,15 +67,15 @@ func TestNewAgent_ValidConstruction(t *testing.T) {
 		t.Fatalf("NewAgent: unexpected error: %v", err)
 	}
 
-	if agent.model != anthropic.Model(DefaultModel) {
-		t.Errorf("model = %q, want %q", agent.model, DefaultModel)
+	if agent.sdkBackend.model != anthropic.Model(DefaultModel) {
+		t.Errorf("model = %q, want %q", agent.sdkBackend.model, DefaultModel)
 	}
 
-	if agent.systemPrompt == "" {
+	if agent.SystemPrompt() == "" {
 		t.Error("system prompt should not be empty")
 	}
 
-	if agent.logger == nil {
+	if agent.sdkBackend.logger == nil {
 		t.Error("logger should not be nil")
 	}
 }
@@ -85,8 +85,8 @@ func TestNewAgent_MaxTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAgent: unexpected error: %v", err)
 	}
-	if agent.maxTokens != 32000 {
-		t.Errorf("maxTokens = %d, want %d", agent.maxTokens, 32000)
+	if agent.sdkBackend.maxTokens != 32000 {
+		t.Errorf("maxTokens = %d, want %d", agent.sdkBackend.maxTokens, 32000)
 	}
 }
 
@@ -95,8 +95,8 @@ func TestNewAgent_MaxTokensZeroDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAgent: unexpected error: %v", err)
 	}
-	if agent.maxTokens != 0 {
-		t.Errorf("maxTokens = %d, want 0 (will use defaultMaxTokens at stream time)", agent.maxTokens)
+	if agent.sdkBackend.maxTokens != 0 {
+		t.Errorf("maxTokens = %d, want 0 (will use defaultMaxTokens at stream time)", agent.sdkBackend.maxTokens)
 	}
 }
 
@@ -106,8 +106,8 @@ func TestNewAgent_CustomModel(t *testing.T) {
 		t.Fatalf("NewAgent: unexpected error: %v", err)
 	}
 
-	if agent.model != "claude-opus-4-6" {
-		t.Errorf("model = %q, want %q", agent.model, "claude-opus-4-6")
+	if agent.sdkBackend.model != "claude-opus-4-6" {
+		t.Errorf("model = %q, want %q", agent.sdkBackend.model, "claude-opus-4-6")
 	}
 }
 
@@ -127,7 +127,7 @@ func TestNewAgent_NilLogger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAgent: unexpected error: %v", err)
 	}
-	if agent.logger == nil {
+	if agent.sdkBackend.logger == nil {
 		t.Error("logger should fall back to slog.Default(), not nil")
 	}
 }
@@ -190,8 +190,8 @@ func TestAgent_Reset(t *testing.T) {
 		t.Fatalf("NewAgent: %v", err)
 	}
 
-	// Manually add a message to history.
-	agent.history = append(agent.history, anthropic.NewUserMessage(
+	// Manually add a message to history via the SDK backend.
+	agent.sdkBackend.history = append(agent.sdkBackend.history, anthropic.NewUserMessage(
 		anthropic.NewTextBlock("hello"),
 	))
 	if len(agent.History()) != 1 {
@@ -230,11 +230,11 @@ func TestAgent_SetTools(t *testing.T) {
 
 	agent.SetTools(tools)
 
-	if len(agent.tools) != 1 {
-		t.Errorf("tools length = %d, want 1", len(agent.tools))
+	if len(agent.sdkBackend.tools) != 1 {
+		t.Errorf("tools length = %d, want 1", len(agent.sdkBackend.tools))
 	}
-	if agent.tools[0].OfTool.Name != "read_file" {
-		t.Errorf("tool name = %q, want %q", agent.tools[0].OfTool.Name, "read_file")
+	if agent.sdkBackend.tools[0].OfTool.Name != "read_file" {
+		t.Errorf("tool name = %q, want %q", agent.sdkBackend.tools[0].OfTool.Name, "read_file")
 	}
 }
 
@@ -476,6 +476,285 @@ func TestAgent_SendMessage_ToolUse(t *testing.T) {
 	if !gotText {
 		t.Error("expected text in tool result response")
 	}
+}
+
+// maxTokensTextSSE builds an SSE payload for a text-only response truncated by max_tokens.
+func maxTokensTextSSE(text string) string {
+	return `event: message_start
+data: {"type":"message_start","message":{"id":"msg_trunc","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250929","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"` + text + `"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},"usage":{"output_tokens":100}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+}
+
+// maxTokensWithToolSSE builds an SSE payload with text + tool_use that ends with max_tokens.
+// The tool_use has valid JSON input (the SDK accumulator validates it), but the response
+// was truncated by max_tokens, so the tool_use is incomplete in the model's intent.
+func maxTokensWithToolSSE(text, toolID, toolName, inputJSON string) string {
+	return `event: message_start
+data: {"type":"message_start","message":{"id":"msg_trunc_tool","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250929","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"` + text + `"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"` + toolID + `","name":"` + toolName + `","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"` + strings.ReplaceAll(inputJSON, `"`, `\"`) + `"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},"usage":{"output_tokens":100}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+}
+
+func TestFilterTextOnlyParam(t *testing.T) {
+	tests := []struct {
+		name      string
+		content   []anthropic.ContentBlockUnion
+		wantTexts []string
+	}{
+		{
+			name: "text only",
+			content: []anthropic.ContentBlockUnion{
+				textContentBlock("hello world"),
+			},
+			wantTexts: []string{"hello world"},
+		},
+		{
+			name: "text and tool_use",
+			content: []anthropic.ContentBlockUnion{
+				textContentBlock("Let me read that file."),
+				toolUseContentBlock("tool_1", "read_file", `{"path":"main.go"}`),
+			},
+			wantTexts: []string{"Let me read that file."},
+		},
+		{
+			name:      "tool_use only",
+			content:   []anthropic.ContentBlockUnion{toolUseContentBlock("tool_2", "validate_spec", `{"content":"test"}`)},
+			wantTexts: []string{"[Response truncated]"},
+		},
+		{
+			name:      "empty content",
+			content:   []anthropic.ContentBlockUnion{},
+			wantTexts: []string{"[Response truncated]"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := anthropic.Message{
+				Content: tc.content,
+			}
+			param := filterTextOnlyParam(msg)
+
+			if param.Role != anthropic.MessageParamRoleAssistant {
+				t.Errorf("role = %q, want 'assistant'", param.Role)
+			}
+
+			var texts []string
+			for _, block := range param.Content {
+				if block.OfText != nil {
+					texts = append(texts, block.OfText.Text)
+				}
+			}
+
+			if len(texts) != len(tc.wantTexts) {
+				t.Fatalf("got %d text blocks, want %d", len(texts), len(tc.wantTexts))
+			}
+			for i, want := range tc.wantTexts {
+				if texts[i] != want {
+					t.Errorf("text[%d] = %q, want %q", i, texts[i], want)
+				}
+			}
+
+			// Verify no tool_use blocks remain.
+			for _, block := range param.Content {
+				if block.OfToolUse != nil {
+					t.Error("filtered param should not contain tool_use blocks")
+				}
+			}
+		})
+	}
+}
+
+func TestAgent_SendMessage_MaxTokensTruncation(t *testing.T) {
+	callCount := 0
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		callCount++
+		if callCount == 1 {
+			// First call: response with text + tool_use truncated by max_tokens.
+			return sseResponse(maxTokensWithToolSSE(
+				"Let me read that file.",
+				"tool_abc", "read_file", `{"path":"main.go"}`,
+			)), nil
+		}
+		// Second call: normal follow-up succeeds.
+		return sseResponse(textSSE("Here is the follow-up.")), nil
+	})
+
+	agent := newMockAgent(t, transport)
+
+	// First message — triggers truncation.
+	ch, err := agent.SendMessage(context.Background(), "Read the main file")
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	var gotTruncNote bool
+	var gotDone bool
+	for chunk := range ch {
+		if chunk.Err != nil {
+			t.Fatalf("unexpected error: %v", chunk.Err)
+		}
+		if strings.Contains(chunk.Text, "token limit") {
+			gotTruncNote = true
+		}
+		if chunk.Done {
+			gotDone = true
+		}
+		if chunk.ToolUse != nil {
+			t.Error("truncated response should not emit tool_use chunks")
+		}
+	}
+	if !gotTruncNote {
+		t.Error("expected truncation note in stream")
+	}
+	if !gotDone {
+		t.Error("expected Done chunk")
+	}
+
+	// Verify history has only text blocks (no tool_use).
+	history := agent.History()
+	if len(history) != 2 {
+		t.Fatalf("history length = %d, want 2 (user + assistant)", len(history))
+	}
+	if history[1].Role != "assistant" {
+		t.Errorf("history[1].Role = %q, want 'assistant'", history[1].Role)
+	}
+	if !strings.Contains(history[1].Content, "Let me read that file.") {
+		t.Errorf("history should contain text, got: %q", history[1].Content)
+	}
+
+	// Follow-up should succeed (no 400 from stale tool_use).
+	ch2, err := agent.SendMessage(context.Background(), "Continue please")
+	if err != nil {
+		t.Fatalf("follow-up SendMessage: %v", err)
+	}
+
+	var followUpText string
+	for chunk := range ch2 {
+		if chunk.Err != nil {
+			t.Fatalf("follow-up stream error: %v", chunk.Err)
+		}
+		followUpText += chunk.Text
+	}
+	if !strings.Contains(followUpText, "follow-up") {
+		t.Errorf("follow-up text = %q, want text containing 'follow-up'", followUpText)
+	}
+}
+
+func TestAgent_SendMessage_MaxTokensExplicitLimit(t *testing.T) {
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return sseResponse(maxTokensTextSSE("partial response")), nil
+	})
+
+	agent, err := NewAgent(
+		"test-key", "",
+		testProjectContext(), nil, nil, 8000,
+		option.WithHTTPClient(&http.Client{Transport: transport}),
+		option.WithMaxRetries(0),
+	)
+	if err != nil {
+		t.Fatalf("NewAgent: %v", err)
+	}
+
+	ch, sendErr := agent.SendMessage(context.Background(), "hello")
+	if sendErr != nil {
+		t.Fatalf("SendMessage: %v", sendErr)
+	}
+
+	var gotErr bool
+	for chunk := range ch {
+		if chunk.Err != nil {
+			gotErr = true
+			if !strings.Contains(chunk.Err.Error(), "max_tokens") {
+				t.Errorf("error should mention max_tokens, got: %v", chunk.Err)
+			}
+		}
+	}
+	if !gotErr {
+		t.Error("expected error chunk for explicit max_tokens truncation")
+	}
+
+	// History should still be safe — only text blocks.
+	for _, mp := range agent.sdkBackend.history {
+		for _, block := range mp.Content {
+			if block.OfToolUse != nil {
+				t.Error("history should not contain tool_use blocks after truncation")
+			}
+		}
+	}
+}
+
+// textContentBlock creates a ContentBlockUnion containing text for testing.
+func textContentBlock(text string) anthropic.ContentBlockUnion {
+	raw := []byte(`{"type":"text","text":` + mustJSON(text) + `}`)
+	var block anthropic.ContentBlockUnion
+	if err := json.Unmarshal(raw, &block); err != nil {
+		panic("textContentBlock: " + err.Error())
+	}
+	return block
+}
+
+// toolUseContentBlock creates a ContentBlockUnion containing a tool_use for testing.
+func toolUseContentBlock(id, name, input string) anthropic.ContentBlockUnion {
+	raw := []byte(`{"type":"tool_use","id":"` + id + `","name":"` + name + `","input":` + input + `}`)
+	var block anthropic.ContentBlockUnion
+	if err := json.Unmarshal(raw, &block); err != nil {
+		// Use empty object input for malformed cases.
+		raw = []byte(`{"type":"tool_use","id":"` + id + `","name":"` + name + `","input":{}}`)
+		if err2 := json.Unmarshal(raw, &block); err2 != nil {
+			panic("toolUseContentBlock: " + err2.Error())
+		}
+	}
+	return block
+}
+
+// mustJSON marshals v to a JSON string, panicking on error.
+func mustJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }
 
 func TestAgent_History_GrowsAfterInteraction(t *testing.T) {

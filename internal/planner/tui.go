@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,6 +25,9 @@ var (
 
 // Minimum debounce interval for glamour re-renders during streaming.
 const glamourDebounce = 200 * time.Millisecond
+
+// streamTimeout is the maximum time to wait for an API response before cancelling.
+const streamTimeout = 120 * time.Second
 
 // chatMessage represents a single message in the conversation display.
 type chatMessage struct {
@@ -72,6 +76,7 @@ type TUIModel struct {
 
 	viewport viewport.Model
 	input    textarea.Model
+	spinner  spinner.Model
 	width    int
 	height   int
 	ready    bool
@@ -98,12 +103,17 @@ func NewTUIModel(agent *Agent, projectRoot string) TUIModel {
 		glamour.WithStylePath("dark"),
 	)
 
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
 	return TUIModel{
 		agent:       agent,
 		projectRoot: projectRoot,
 		streamBuf:   &strings.Builder{},
 		viewport:    vp,
 		input:       ta,
+		spinner:     sp,
 		renderer:    renderer,
 	}
 }
@@ -172,6 +182,10 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.streamBuf.Reset()
 		m.err = msg.Err
+		m.messages = append(m.messages, chatMessage{
+			role:    "error",
+			content: formatAPIError(msg.Err),
+		})
 		m.refreshViewport()
 		cmds = append(cmds, m.input.Focus())
 
@@ -186,6 +200,15 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ToolResultMsg:
 		cmds = append(cmds, m.handleToolResultCmd(msg))
+
+	case spinner.TickMsg:
+		if m.streaming {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 
 	case initialSendMsg:
 		return m, m.sendMessageCmd(msg.text)
@@ -265,13 +288,16 @@ func (m *TUIModel) sendMessageCmd(text string) tea.Cmd {
 	m.refreshViewport()
 
 	agent := m.agent
-	return func() tea.Msg {
-		ch, err := agent.SendMessage(context.Background(), text)
+	sendCmd := func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), streamTimeout)
+		defer cancel()
+		ch, err := agent.SendMessage(ctx, text)
 		if err != nil {
 			return StreamErrMsg{Err: err}
 		}
 		return readStreamMsg(ch)
 	}
+	return tea.Batch(sendCmd, m.spinner.Tick)
 }
 
 // readStreamMsg reads one chunk from the stream channel and returns the
@@ -303,7 +329,9 @@ type streamBatchMsg struct {
 func (m *TUIModel) executeToolCmd(chunk ToolUseChunk) tea.Cmd {
 	root := m.projectRoot
 	return func() tea.Msg {
-		result, isError := ExecuteTool(context.Background(), root, chunk.Name, chunk.Input)
+		ctx, cancel := context.WithTimeout(context.Background(), streamTimeout)
+		defer cancel()
+		result, isError := ExecuteTool(ctx, root, chunk.Name, chunk.Input)
 		return ToolResultMsg{
 			ToolID:  chunk.ID,
 			Result:  result,
@@ -317,13 +345,16 @@ func (m *TUIModel) handleToolResultCmd(msg ToolResultMsg) tea.Cmd {
 	m.streaming = true
 	m.streamBuf.Reset()
 	agent := m.agent
-	return func() tea.Msg {
-		ch, err := agent.HandleToolResult(context.Background(), msg.ToolID, msg.Result, msg.IsError)
+	sendCmd := func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), streamTimeout)
+		defer cancel()
+		ch, err := agent.HandleToolResult(ctx, msg.ToolID, msg.Result, msg.IsError)
 		if err != nil {
 			return StreamErrMsg{Err: err}
 		}
 		return readStreamMsg(ch)
 	}
+	return tea.Batch(sendCmd, m.spinner.Tick)
 }
 
 // View implements tea.Model.
@@ -343,7 +374,10 @@ func (m TUIModel) View() string {
 
 func (m TUIModel) inputView() string {
 	if m.streaming {
-		return inputBarStyle.Render("  Thinking...")
+		return inputBarStyle.Render(fmt.Sprintf("  %s Thinking...", m.spinner.View()))
+	}
+	if m.err != nil {
+		return m.input.View() + "\n" + errorStyle.Render("  ⚠ Error occurred — see above. Type to continue.")
 	}
 	return m.input.View()
 }
@@ -406,18 +440,15 @@ func (m *TUIModel) refreshViewport() {
 		case "tool":
 			b.WriteString(toolStyle.Render(msg.content))
 			b.WriteString("\n\n")
+		case "error":
+			b.WriteString(errorStyle.Render(msg.content))
+			b.WriteString("\n\n")
 		}
 	}
 
 	// Show streaming buffer if active.
 	if m.streaming && m.streamBuf.Len() > 0 {
 		b.WriteString(m.streamBuf.String())
-	}
-
-	// Show error if present.
-	if m.err != nil {
-		b.WriteString(errorStyle.Render(fmt.Sprintf("\nError: %v", m.err)))
-		b.WriteByte('\n')
 	}
 
 	m.viewport.SetContent(b.String())
@@ -434,6 +465,32 @@ func (m *TUIModel) renderMarkdown(text string) string {
 		return text
 	}
 	return strings.TrimSpace(rendered)
+}
+
+// formatAPIError returns a user-friendly error message with the raw error details.
+func formatAPIError(err error) string {
+	msg := err.Error()
+	var friendly string
+
+	lower := strings.ToLower(msg)
+	switch {
+	case strings.Contains(lower, "context deadline exceeded"):
+		friendly = "Request timed out — the API did not respond in time."
+	case strings.Contains(lower, "401") || strings.Contains(lower, "unauthorized"):
+		friendly = "Authentication failed — check your API key."
+	case strings.Contains(lower, "rate limit") || strings.Contains(lower, "429"):
+		friendly = "Rate limited — too many requests. Wait a moment and try again."
+	case strings.Contains(lower, "overloaded") || strings.Contains(lower, "529"):
+		friendly = "API is overloaded — try again shortly."
+	case strings.Contains(lower, "connection refused") || strings.Contains(lower, "no such host"):
+		friendly = "Cannot reach the API — check your network connection."
+	case strings.Contains(lower, "500") || strings.Contains(lower, "internal server error"):
+		friendly = "API server error — this is not your fault. Try again shortly."
+	default:
+		friendly = "An API error occurred."
+	}
+
+	return fmt.Sprintf("API Error: %s\n\nDetails: %s", friendly, msg)
 }
 
 // padRight pads a string with spaces to fill width.

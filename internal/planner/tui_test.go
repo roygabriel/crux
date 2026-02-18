@@ -166,6 +166,21 @@ func TestTUIModel_StreamError(t *testing.T) {
 		t.Error("err should be set")
 	}
 
+	// Error should be appended as an inline chat message.
+	found := false
+	for _, msg := range model.messages {
+		if msg.role == "error" {
+			found = true
+			if !strings.Contains(msg.content, "rate limited") {
+				t.Errorf("error message should contain original error, got: %q", msg.content)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("expected an error chat message to be appended")
+	}
+
 	view := model.View()
 	if !strings.Contains(view, "rate limited") {
 		t.Errorf("view should show error, got: %s", view)
@@ -303,6 +318,16 @@ func TestTUIModel_InputViewWhileStreaming(t *testing.T) {
 	}
 }
 
+func TestTUIModel_InputViewWithError(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.err = errors.New("some error")
+
+	view := m.inputView()
+	if !strings.Contains(view, "Error occurred") {
+		t.Errorf("input view with error should show notice, got: %q", view)
+	}
+}
+
 func TestTUIModel_RefreshViewport_UserMessage(t *testing.T) {
 	m := initModel(newTestTUIModel(t))
 	m.messages = append(m.messages, chatMessage{role: "user", content: "hello world"})
@@ -355,14 +380,17 @@ func TestTUIModel_RefreshViewport_StreamingBuffer(t *testing.T) {
 	}
 }
 
-func TestTUIModel_RefreshViewport_Error(t *testing.T) {
+func TestTUIModel_RefreshViewport_ErrorMessage(t *testing.T) {
 	m := initModel(newTestTUIModel(t))
-	m.err = fmt.Errorf("test error")
+	m.messages = append(m.messages, chatMessage{
+		role:    "error",
+		content: formatAPIError(fmt.Errorf("test error")),
+	})
 	m.refreshViewport()
 
 	content := m.viewport.View()
 	if !strings.Contains(content, "test error") {
-		t.Errorf("viewport should show error, got: %q", content)
+		t.Errorf("viewport should show error message, got: %q", content)
 	}
 }
 
@@ -496,5 +524,93 @@ func TestPadLeft(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("padLeft(%q, %d) = %q, want %q", tc.input, tc.width, got, tc.want)
 		}
+	}
+}
+
+func TestNewTUIModel_SpinnerInitialized(t *testing.T) {
+	m := newTestTUIModel(t)
+	// The spinner should produce non-empty View output.
+	view := m.spinner.View()
+	if view == "" {
+		t.Error("spinner should produce non-empty view")
+	}
+}
+
+func TestFormatAPIError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		contains string
+	}{
+		{
+			name:     "timeout",
+			err:      errors.New("context deadline exceeded"),
+			contains: "timed out",
+		},
+		{
+			name:     "unauthorized",
+			err:      errors.New("401 Unauthorized"),
+			contains: "Authentication failed",
+		},
+		{
+			name:     "rate_limit",
+			err:      errors.New("429 rate limit exceeded"),
+			contains: "Rate limited",
+		},
+		{
+			name:     "overloaded",
+			err:      errors.New("529 API overloaded"),
+			contains: "overloaded",
+		},
+		{
+			name:     "connection_refused",
+			err:      errors.New("connection refused"),
+			contains: "Cannot reach",
+		},
+		{
+			name:     "server_error",
+			err:      errors.New("500 internal server error"),
+			contains: "server error",
+		},
+		{
+			name:     "unknown",
+			err:      errors.New("something weird happened"),
+			contains: "An API error occurred",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := formatAPIError(tc.err)
+			if !strings.Contains(result, tc.contains) {
+				t.Errorf("formatAPIError(%q) = %q, want it to contain %q", tc.err, result, tc.contains)
+			}
+			// All results should include the raw error in Details.
+			if !strings.Contains(result, tc.err.Error()) {
+				t.Errorf("formatAPIError should include raw error in details, got: %q", result)
+			}
+		})
+	}
+}
+
+func TestTUIModel_StreamErrAppendsMessage(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.streaming = true
+
+	testErr := errors.New("connection refused")
+	updated, _ := m.Update(StreamErrMsg{Err: testErr})
+	model := updated.(TUIModel)
+
+	if len(model.messages) != 1 {
+		t.Fatalf("expected 1 message (error), got %d", len(model.messages))
+	}
+	if model.messages[0].role != "error" {
+		t.Errorf("message role = %q, want 'error'", model.messages[0].role)
+	}
+	if !strings.Contains(model.messages[0].content, "Cannot reach") {
+		t.Errorf("error message should contain friendly text, got: %q", model.messages[0].content)
+	}
+	if !strings.Contains(model.messages[0].content, "connection refused") {
+		t.Errorf("error message should contain raw error, got: %q", model.messages[0].content)
 	}
 }

@@ -37,7 +37,7 @@ vendor/
 .env.*.local
 
 # Project-specific
-templates/
+/templates/
 LLM.md
 CLAUDE.md
 docs/phases/

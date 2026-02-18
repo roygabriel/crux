@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/roygabriel/crux/internal/config"
 	"github.com/roygabriel/crux/internal/examples"
 	"github.com/roygabriel/crux/internal/instruct/prefs"
+	"github.com/roygabriel/crux/internal/memory/bank"
 	"github.com/roygabriel/crux/internal/planner"
 	"github.com/roygabriel/crux/internal/scaffold"
 	"github.com/roygabriel/crux/internal/wizard"
@@ -25,7 +27,9 @@ var (
 	forceFlag     bool
 	exampleFlag   string
 	noInteractive bool
-	noPrefs       bool
+	skipPrefs     bool
+	skipPlan      bool
+	skipInstruct  bool
 )
 
 // knownExamples maps example names to their embedded FS loader functions.
@@ -44,7 +48,9 @@ func init() {
 	initCmd.Flags().BoolVar(&forceFlag, "force", false, "Overwrite template files (never overwrites config)")
 	initCmd.Flags().StringVar(&exampleFlag, "example", "", "Seed project with a named example (e.g. httpapi)")
 	initCmd.Flags().BoolVarP(&noInteractive, "no-interactive", "y", false, "Skip interactive wizard, use defaults")
-	initCmd.Flags().BoolVar(&noPrefs, "no-prefs", false, "Skip preference questionnaire")
+	initCmd.Flags().BoolVar(&skipPrefs, "skip-prefs", false, "Skip preference questionnaire")
+	initCmd.Flags().BoolVar(&skipPlan, "skip-plan", false, "Skip planning agent")
+	initCmd.Flags().BoolVar(&skipInstruct, "skip-instruct", false, "Skip instruction file generation")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -118,19 +124,32 @@ func runWizardInit(cfgPath string) error {
 		return err
 	}
 
-	// Seed example if requested by the wizard.
-	if result.SeedExample {
-		return seedExample(cfgPath, "httpapi")
+	// Generate instruction files for configured agents.
+	if err := runInstructGeneration(cfgPath); err != nil {
+		return err
 	}
 
+	// Initialize memory bank.
+	if err := runMemoryBankInit(cfgPath); err != nil {
+		return err
+	}
+
+	// Seed example if requested by the wizard.
+	if result.SeedExample {
+		if err := seedExample(cfgPath, "httpapi"); err != nil {
+			return err
+		}
+	}
+
+	fmt.Println("\nProject initialized. Run 'crux start' to begin.")
 	return nil
 }
 
 // runPreferenceSetup runs the preference questionnaire during init.
-// Skipped if --no-prefs is set or preferences.yaml already exists (unless --force).
+// Skipped if --skip-prefs is set or preferences.yaml already exists (unless --force).
 func runPreferenceSetup(cruxDir string) error {
-	if noPrefs {
-		fmt.Println("\u2022 Skipped preferences (--no-prefs)")
+	if skipPrefs {
+		fmt.Println("\u2022 Skipped preferences (--skip-prefs)")
 		return nil
 	}
 
@@ -165,6 +184,11 @@ func runPreferenceSetup(cruxDir string) error {
 // offerPlanningAgent checks for an API key and offers to launch the planning
 // agent for interactive phase design. Skips silently if no key is available.
 func offerPlanningAgent(cfgPath, cruxDir string) error {
+	if skipPlan {
+		fmt.Println("\u2022 Skipped planning agent (--skip-plan)")
+		return nil
+	}
+
 	apiKey := resolveAPIKey()
 	if apiKey == "" {
 		return nil
@@ -246,11 +270,24 @@ func runDefaultInit(cfgPath string) error {
 		return err
 	}
 
-	// Seed with example project if requested.
-	if exampleFlag != "" {
-		return seedExample(cfgPath, exampleFlag)
+	// Generate instruction files for configured agents.
+	if err := runInstructGeneration(cfgPath); err != nil {
+		return err
 	}
 
+	// Initialize memory bank.
+	if err := runMemoryBankInit(cfgPath); err != nil {
+		return err
+	}
+
+	// Seed with example project if requested.
+	if exampleFlag != "" {
+		if err := seedExample(cfgPath, exampleFlag); err != nil {
+			return err
+		}
+	}
+
+	fmt.Println("\nProject initialized. Run 'crux start' to begin.")
 	return nil
 }
 
@@ -321,6 +358,54 @@ func seedExample(cfgPath, name string) error {
 		fmt.Printf("\u2022 Skipped %s (exists)\n", name)
 	}
 
+	return nil
+}
+
+// runInstructGeneration generates instruction files for all configured agents.
+// Skipped if --skip-instruct is set or if no agents are configured.
+func runInstructGeneration(cfgPath string) error {
+	if skipInstruct {
+		fmt.Println("\u2022 Skipped instruction generation (--skip-instruct)")
+		return nil
+	}
+
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return fmt.Errorf("load config for instruct: %w", err)
+	}
+
+	if len(cfg.Agents) == 0 {
+		fmt.Println("\u2022 Skipped instruction generation (no agents configured)")
+		return nil
+	}
+
+	log := setupLogger()
+	dist := buildDistributor(cfg, log)
+
+	if err := dist.GenerateAll(context.Background()); err != nil {
+		return fmt.Errorf("generate instructions: %w", err)
+	}
+
+	fmt.Printf("\u2713 Generated instruction files for %d agent(s)\n", len(cfg.Agents))
+	return nil
+}
+
+// runMemoryBankInit initializes the memory bank directory with template files.
+func runMemoryBankInit(cfgPath string) error {
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return fmt.Errorf("load config for memory bank: %w", err)
+	}
+
+	bankDir := filepath.Join(cfg.Project.StateDir, "memory-bank")
+	log := setupLogger()
+	memBank := bank.NewBank(bankDir, log)
+
+	if err := memBank.Init(); err != nil {
+		return fmt.Errorf("init memory bank: %w", err)
+	}
+
+	fmt.Println("\u2713 Initialized memory bank")
 	return nil
 }
 

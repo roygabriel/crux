@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/roygabriel/crux/internal/config"
+	"github.com/roygabriel/crux/internal/instruct"
 )
 
 func TestSimpleDiff_IdenticalContent(t *testing.T) {
@@ -191,4 +196,152 @@ func languageFromRoot(root string) string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// buildTestDistributor creates a distributor and config for validation testing.
+// It writes a config with a claude agent and returns the config and distributor.
+func buildTestDistributor(t *testing.T, projectRoot string) (*config.Config, *instruct.Distributor) {
+	t.Helper()
+
+	cruxDir := filepath.Join(projectRoot, ".crux")
+	if err := os.MkdirAll(cruxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(cruxDir, "config.yaml")
+	cfgContent := `project:
+  name: test-project
+  root: "` + projectRoot + `"
+  state_dir: "` + cruxDir + `"
+agents:
+  dev:
+    plugin: claude
+    role: engineer
+    permission: standard
+memory:
+  sqlite_path: "` + filepath.Join(cruxDir, "memory.db") + `"
+  vector_dir: "` + filepath.Join(cruxDir, "vectors") + `"
+phases:
+  spec_dir: docs/phases
+security:
+  audit_log: "` + filepath.Join(cruxDir, "audit.log") + `"
+  max_cmds_per_min: 60
+  max_files_per_session: 100
+context:
+  total_budget: 8000
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	log := setupLogger()
+	dist := buildDistributor(cfg, log)
+	return cfg, dist
+}
+
+func TestValidateAgent_ValidFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg, dist := buildTestDistributor(t, dir)
+
+	ctx := context.Background()
+
+	// Generate valid instruction files first.
+	if err := dist.GenerateAll(ctx); err != nil {
+		t.Fatalf("GenerateAll: %v", err)
+	}
+
+	issues := validateAgent(ctx, dist, cfg, "dev")
+	if len(issues) > 0 {
+		t.Errorf("expected no issues for valid file, got: %v", issues)
+	}
+}
+
+func TestValidateAgent_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg, dist := buildTestDistributor(t, dir)
+
+	ctx := context.Background()
+
+	// Don't generate files — they should be missing.
+	issues := validateAgent(ctx, dist, cfg, "dev")
+
+	found := false
+	for _, issue := range issues {
+		if strings.Contains(issue, "file missing") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'file missing' issue, got: %v", issues)
+	}
+}
+
+func TestValidateAgent_LeakedTemplateSyntax(t *testing.T) {
+	dir := t.TempDir()
+	cfg, dist := buildTestDistributor(t, dir)
+
+	ctx := context.Background()
+
+	// Generate then corrupt the file with template syntax.
+	if err := dist.GenerateAll(ctx); err != nil {
+		t.Fatalf("GenerateAll: %v", err)
+	}
+
+	claudeMD := filepath.Join(dir, "CLAUDE.md")
+	if err := os.WriteFile(claudeMD, []byte("## Identity\n## Constraints\n## Session\n[[ .Something ]]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	issues := validateAgent(ctx, dist, cfg, "dev")
+
+	found := false
+	for _, issue := range issues {
+		if strings.Contains(issue, "leaked template syntax") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'leaked template syntax' issue, got: %v", issues)
+	}
+}
+
+func TestValidateAgent_StaleFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg, dist := buildTestDistributor(t, dir)
+
+	ctx := context.Background()
+
+	// Generate valid files.
+	if err := dist.GenerateAll(ctx); err != nil {
+		t.Fatalf("GenerateAll: %v", err)
+	}
+
+	// Overwrite the file with completely different content to simulate
+	// staleness. The marker-based InsertGenerated preserves content outside
+	// markers, so we must replace the entire file to create a mismatch.
+	claudeMD := filepath.Join(dir, "CLAUDE.md")
+	staleContent := "## Identity\nStale identity\n## Constraints\nStale constraints\n## Session\nStale session\n"
+	if err := os.WriteFile(claudeMD, []byte(staleContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	issues := validateAgent(ctx, dist, cfg, "dev")
+
+	found := false
+	for _, issue := range issues {
+		if strings.Contains(issue, "stale") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'stale' issue, got: %v", issues)
+	}
 }

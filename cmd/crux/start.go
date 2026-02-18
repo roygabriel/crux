@@ -10,8 +10,11 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"os"
+
 	"github.com/roygabriel/crux/internal/agent"
 	"github.com/roygabriel/crux/internal/config"
+	"github.com/roygabriel/crux/internal/instruct"
 	"github.com/roygabriel/crux/internal/memory/bank"
 	"github.com/roygabriel/crux/internal/memory/journal"
 	"github.com/roygabriel/crux/internal/memory/session"
@@ -143,11 +146,18 @@ var startCmd = &cobra.Command{
 
 		messenger.SetMessageGate(secMiddleware)
 
-		// Generate instruction files unless --no-instruct is set.
+		// Generate or refresh instruction files unless --no-instruct is set.
 		if !noInstructFlag {
 			dist := buildDistributor(cfg, log)
-			if err := dist.GenerateAll(context.Background()); err != nil {
-				log.Warn("instruction generation failed", "error", err)
+			generated, refreshed, instrErr := ensureInstructionFiles(context.Background(), dist, cfg, log)
+			if instrErr != nil {
+				log.Warn("instruction generation failed", "error", instrErr)
+			} else if generated > 0 {
+				log.Info("generated instruction files", "agents", generated)
+			} else if refreshed > 0 {
+				log.Info("refreshed instruction files", "agents", refreshed)
+			} else {
+				log.Info("instruction files up to date")
 			}
 		}
 
@@ -381,4 +391,69 @@ type securityAdapter struct {
 
 func (a *securityAdapter) Gate(agentID types.AgentID, perm types.Permission, action, target string, phaseID types.PhaseID, promptNum int) error {
 	return a.mw.GateString(agentID, perm, action, target, phaseID, promptNum)
+}
+
+// ensureInstructionFiles generates missing instruction files or refreshes
+// stale ones. Returns the number of agents whose files were generated from
+// scratch and the number whose files were refreshed.
+func ensureInstructionFiles(ctx context.Context, dist *instruct.Distributor, cfg *config.Config, log *slog.Logger) (generated, refreshed int, err error) {
+	if instructionFilesMissing(cfg) {
+		if err := dist.GenerateAll(ctx); err != nil {
+			return 0, 0, err
+		}
+		return len(cfg.Agents), 0, nil
+	}
+
+	// All primary files exist — check for staleness per agent.
+	for _, id := range sortedAgentIDs(cfg) {
+		files, _, previewErr := dist.PreviewForAgent(ctx, id)
+		if previewErr != nil {
+			log.Warn("failed to preview agent instructions", "agent_id", id, "error", previewErr)
+			continue
+		}
+
+		for _, f := range files {
+			existing, readErr := os.ReadFile(f.Path)
+			if readErr != nil {
+				// File missing for this agent — regenerate.
+				if genErr := dist.GenerateForAgent(ctx, id); genErr != nil {
+					log.Warn("failed to regenerate agent instructions", "agent_id", id, "error", genErr)
+				} else {
+					refreshed++
+				}
+				break
+			}
+			if string(existing) != f.Content {
+				if genErr := dist.GenerateForAgent(ctx, id); genErr != nil {
+					log.Warn("failed to regenerate agent instructions", "agent_id", id, "error", genErr)
+				} else {
+					refreshed++
+				}
+				break
+			}
+		}
+	}
+
+	return 0, refreshed, nil
+}
+
+// instructionFilesMissing returns true if any configured agent is missing
+// its primary instruction file on disk.
+func instructionFilesMissing(cfg *config.Config) bool {
+	for _, id := range sortedAgentIDs(cfg) {
+		agentCfg := cfg.Agents[id]
+		adapter, err := instruct.AdapterForCLI(instruct.AgentCLI(agentCfg.Plugin))
+		if err != nil {
+			continue
+		}
+		probe := &instruct.RenderResult{Content: "probe"}
+		files, err := adapter.PrepareFiles(probe, cfg.Project.Root, nil)
+		if err != nil || len(files) == 0 {
+			continue
+		}
+		if _, statErr := os.Stat(files[0].Path); os.IsNotExist(statErr) {
+			return true
+		}
+	}
+	return false
 }

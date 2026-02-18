@@ -58,6 +58,13 @@ var instructStatusCmd = &cobra.Command{
 	RunE:  runInstructStatus,
 }
 
+var instructValidateCmd = &cobra.Command{
+	Use:   "validate",
+	Short: "Validate generated instruction files",
+	Long:  "Checks instruction files for existence, token budget, critical sections, template syntax leaks, and staleness.",
+	RunE:  runInstructValidate,
+}
+
 func init() {
 	instructGenerateCmd.Flags().StringVar(&instructAgentFlag, "agent", "", "Generate for a specific agent ID")
 	instructGenerateCmd.Flags().BoolVar(&instructForceFlag, "force", false, "Write even if content hash is unchanged")
@@ -67,10 +74,13 @@ func init() {
 
 	instructDiffCmd.Flags().StringVar(&instructAgentFlag, "agent", "", "Diff for a specific agent ID")
 
+	instructValidateCmd.Flags().StringVar(&instructAgentFlag, "agent", "", "Validate a specific agent ID")
+
 	instructCmd.AddCommand(instructGenerateCmd)
 	instructCmd.AddCommand(instructPreviewCmd)
 	instructCmd.AddCommand(instructDiffCmd)
 	instructCmd.AddCommand(instructStatusCmd)
+	instructCmd.AddCommand(instructValidateCmd)
 }
 
 func runInstructGenerate(cmd *cobra.Command, args []string) error {
@@ -300,6 +310,119 @@ func runInstructStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func runInstructValidate(cmd *cobra.Command, args []string) error {
+	log := setupLogger()
+
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	dist := buildDistributor(cfg, log)
+	ctx := context.Background()
+
+	agents := sortedAgentIDs(cfg)
+	if instructAgentFlag != "" {
+		if _, ok := cfg.Agents[instructAgentFlag]; !ok {
+			return fmt.Errorf("unknown agent: %s", instructAgentFlag)
+		}
+		agents = []string{instructAgentFlag}
+	}
+
+	anyInvalid := false
+	for _, id := range agents {
+		issues := validateAgent(ctx, dist, cfg, id)
+		if len(issues) == 0 {
+			fmt.Printf("  %s: OK\n", id)
+		} else {
+			anyInvalid = true
+			fmt.Printf("  %s: INVALID\n", id)
+			for _, issue := range issues {
+				fmt.Printf("    - %s\n", issue)
+			}
+		}
+	}
+
+	if anyInvalid {
+		return fmt.Errorf("validation failed for one or more agents")
+	}
+	return nil
+}
+
+// validateAgent checks a single agent's instruction files for common issues.
+// Returns a list of issue descriptions; an empty slice means valid.
+func validateAgent(ctx context.Context, dist *instruct.Distributor, cfg *config.Config, agentID string) []string {
+	var issues []string
+
+	agentCfg := cfg.Agents[agentID]
+	cli := instruct.AgentCLI(agentCfg.Plugin)
+
+	adapter, err := instruct.AdapterForCLI(cli)
+	if err != nil {
+		return append(issues, fmt.Sprintf("unknown CLI %q", agentCfg.Plugin))
+	}
+
+	// Probe for file paths.
+	probe := &instruct.RenderResult{Content: "probe"}
+	probeFiles, err := adapter.PrepareFiles(probe, cfg.Project.Root, nil)
+	if err != nil {
+		return append(issues, fmt.Sprintf("failed to determine file paths: %v", err))
+	}
+
+	// Check 1: Files exist.
+	var primaryContent string
+	for _, f := range probeFiles {
+		data, readErr := os.ReadFile(f.Path)
+		if readErr != nil {
+			issues = append(issues, fmt.Sprintf("file missing: %s", f.Path))
+		} else if f.Purpose == "primary" {
+			primaryContent = string(data)
+		}
+	}
+
+	// If primary file is missing, remaining checks are not meaningful.
+	if primaryContent == "" {
+		return issues
+	}
+
+	// Check 2: Token budget.
+	tokens := instruct.EstimateTokens(primaryContent)
+	budget := adapter.TokenBudget()
+	if tokens > budget {
+		issues = append(issues, fmt.Sprintf("token count %d exceeds budget %d", tokens, budget))
+	}
+
+	// Check 3: Critical sections.
+	for _, header := range []string{"## Identity", "## Constraints", "## Session"} {
+		if !strings.Contains(primaryContent, header) {
+			issues = append(issues, fmt.Sprintf("missing critical section: %s", header))
+		}
+	}
+
+	// Check 4: Template syntax leak.
+	if strings.Contains(primaryContent, "[[") && strings.Contains(primaryContent, "]]") {
+		issues = append(issues, "leaked template syntax: found [[ and ]] in content")
+	}
+
+	// Check 5: Staleness.
+	files, _, previewErr := dist.PreviewForAgent(ctx, agentID)
+	if previewErr == nil {
+		for _, f := range files {
+			existing, readErr := os.ReadFile(f.Path)
+			if readErr == nil && string(existing) != f.Content {
+				issues = append(issues, fmt.Sprintf("stale: %s differs from rendered output", f.Path))
+			}
+		}
+	}
+
+	// Check 6: Adapter validation.
+	if valErr := adapter.ValidateOutput(primaryContent); valErr != nil {
+		issues = append(issues, fmt.Sprintf("adapter validation: %v", valErr))
+	}
+
+	return issues
 }
 
 // buildDistributor creates a Distributor from config for CLI use.

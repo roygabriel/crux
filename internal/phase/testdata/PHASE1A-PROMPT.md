@@ -10,18 +10,18 @@
 
 Initialize the Go module and project skeleton.
 
-1. Create `go.mod` with module path `github.com/roygabriel/torch` and Go 1.23+
+1. Create `go.mod` with module path `github.com/roygabriel/crux` and Go 1.23+
 2. Create the full directory structure from README.md
 3. Create `Makefile` with targets:
-   - `build`: `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/torch ./cmd/torch`
+   - `build`: `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/crux ./cmd/crux`
    - `test`: `go test -race -coverprofile=coverage.out ./...`
    - `lint`: `golangci-lint run ./...`
    - `vet`: `go vet ./...`
    - `coverage`: `go tool cover -func=coverage.out`
    - `clean`: remove build artifacts
-4. Create `.gitignore` (bin/, coverage.out, *.exe, .env, vendor/, .torch/memory.db, .torch/vectors/, .torch/audit.log, .torch/secrets.env)
+4. Create `.gitignore` (bin/, coverage.out, *.exe, .env, vendor/, .crux/memory.db, .crux/vectors/, .crux/audit.log, .crux/secrets.env)
 5. Create `.github/workflows/ci.yml` skeleton with test, lint, build jobs
-6. Create placeholder `cmd/torch/main.go` with minimal main function
+6. Create placeholder `cmd/crux/main.go` with minimal main function
 
 ### Verification
 ```bash
@@ -32,7 +32,7 @@ go vet ./...
 ### Acceptance Criteria
 - `go mod tidy` exits 0
 - Directory structure matches README.md layout
-- `.gitignore` excludes sensitive `.torch/` files but not `.torch/config.yaml`
+- `.gitignore` excludes sensitive `.crux/` files but not `.crux/config.yaml`
 
 ---
 
@@ -163,7 +163,7 @@ Create YAML configuration with environment variable overrides.
    - `Config` struct with nested structs: ProjectConfig, AgentConfig (map), MemoryConfig, PhaseConfig, SecurityConfig
    - `Load(path string) (*Config, error)` — read YAML, apply env overrides, validate
    - `Validate() error` — check required fields, path existence, valid enums
-   - Environment override pattern: `TORCH_MEMORY_SQLITE_PATH` overrides `memory.sqlite_path`
+   - Environment override pattern: `CRUX_MEMORY_SQLITE_PATH` overrides `memory.sqlite_path`
 3. Create `internal/config/defaults.go` — DefaultConfig() returning zero-config defaults
 4. Create `internal/config/config_test.go`:
    - Test Load with valid YAML
@@ -197,22 +197,22 @@ go test -race ./internal/config/...
 
 Set up cobra CLI with stub subcommands.
 
-1. `cmd/torch/root.go` — Root command with `--config` flag (default `.torch/config.yaml`), version flag, slog setup
-2. `cmd/torch/start.go` — `torch start` stub that loads config, prints "starting orchestration"
-3. `cmd/torch/status.go` — `torch status` stub
-4. `cmd/torch/init_cmd.go` — `torch init` that creates `.torch/` directory, copies default config, creates `docs/phases/` and `work-notes/` directories
-5. `cmd/torch/main.go` — main() calls root.Execute()
+1. `cmd/crux/root.go` — Root command with `--config` flag (default `.crux/config.yaml`), version flag, slog setup
+2. `cmd/crux/start.go` — `crux start` stub that loads config, prints "starting orchestration"
+3. `cmd/crux/status.go` — `crux status` stub
+4. `cmd/crux/init_cmd.go` — `crux init` that creates `.crux/` directory, copies default config, creates `docs/phases/` and `work-notes/` directories
+5. `cmd/crux/main.go` — main() calls root.Execute()
 
 ### Verification
 ```bash
 go build ./...
 go vet ./...
-./bin/torch --help
-./bin/torch init --help
+./bin/crux --help
+./bin/crux init --help
 ```
 
 ### Acceptance Criteria
-- `torch --help` shows all subcommands
-- `torch init` creates the expected directory structure
-- `torch start` loads config without error
-- Config flag works: `torch --config custom.yaml start`
+- `crux --help` shows all subcommands
+- `crux init` creates the expected directory structure
+- `crux start` loads config without error
+- Config flag works: `crux --config custom.yaml start`

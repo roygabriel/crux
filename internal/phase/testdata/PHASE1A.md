@@ -21,7 +21,7 @@ Bootstrap everything needed for subsequent phases to compile. Establish the modu
 - YAML config loading with environment variable overrides and validation
 
 ### Prompt 4
-- CLI framework with cobra (torch start, status, init subcommands as stubs)
+- CLI framework with cobra (crux start, status, init subcommands as stubs)
 
 ## Files
 
@@ -31,11 +31,11 @@ Bootstrap everything needed for subsequent phases to compile. Establish the modu
 - Makefile
 - .gitignore
 - .github/workflows/ci.yml
-- cmd/torch/main.go
-- cmd/torch/root.go
-- cmd/torch/start.go
-- cmd/torch/status.go
-- cmd/torch/init.go
+- cmd/crux/main.go
+- cmd/crux/root.go
+- cmd/crux/start.go
+- cmd/crux/status.go
+- cmd/crux/init.go
 - internal/config/config.go
 - internal/config/config_test.go
 - internal/config/defaults.go
@@ -58,8 +58,8 @@ None
 - [ ] `go build ./...` exits 0
 - [ ] `go vet ./...` exits 0
 - [ ] `go test -race ./...` exits 0
-- [ ] `./bin/torch --help` prints usage
-- [ ] `./bin/torch init --help` prints usage
+- [ ] `./bin/crux --help` prints usage
+- [ ] `./bin/crux init --help` prints usage
 - [ ] Config loads from YAML and applies env overrides
 
 ## Progress Notes

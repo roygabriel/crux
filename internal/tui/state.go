@@ -20,6 +20,9 @@ type AgentSnapshot struct {
 	Task           string           `json:"task"`
 	CommandsPerMin int              `json:"commands_per_min"`
 	FilesSession   int              `json:"files_session"`
+	Permission     string           `json:"permission"`
+	Decisions      []string         `json:"decisions"`
+	WorkNotesInfo  string           `json:"work_notes_info"`
 }
 
 // StateUpdate is a complete snapshot of orchestration state for the TUI.

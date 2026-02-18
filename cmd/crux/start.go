@@ -152,7 +152,7 @@ var startCmd = &cobra.Command{
 		defer stop()
 
 		if tuiFlag {
-			return runWithTUI(ctx, stop, orch, registry, engine, messenger, rateLimiter, tracker, auditLogger, log)
+			return runWithTUI(ctx, stop, orch, registry, engine, messenger, rateLimiter, tracker, auditLogger, j, notesMgr, log)
 		}
 
 		// Headless mode.
@@ -180,6 +180,8 @@ func runWithTUI(
 	rateLimiter *security.RateLimiter,
 	tracker *phase.Tracker,
 	auditLogger *security.AuditLogger,
+	j *journal.Journal,
+	notesMgr *worknotes.Manager,
 	logger *slog.Logger,
 ) error {
 	bridge := tui.NewStateBridge(1)
@@ -273,6 +275,30 @@ func runWithTUI(
 			as, _ := worldState.GetAgent(inst.Agent.ID)
 			cmds, files := rateLimiter.Stats(inst.Agent.ID)
 
+			// Fetch recent decisions for this agent.
+			var decisions []string
+			if decs, err := j.ByAgent(context.Background(), inst.Agent.ID); err == nil {
+				start := 0
+				if len(decs) > 5 {
+					start = len(decs) - 5
+				}
+				for _, d := range decs[start:] {
+					decisions = append(decisions, fmt.Sprintf("%s — %s", d.Action, d.Rationale))
+				}
+			}
+
+			// Fetch work notes summary for the current phase.
+			var workNotesInfo string
+			if notes, err := notesMgr.Read(string(snap.Phase)); err == nil {
+				workNotesInfo = fmt.Sprintf("Status: %s", notes.Status)
+				if len(notes.SessionLog) > 0 {
+					last := notes.SessionLog[len(notes.SessionLog)-1]
+					if last.Next != "" {
+						workNotesInfo += fmt.Sprintf("\nNext: %s", last.Next)
+					}
+				}
+			}
+
 			snapshots = append(snapshots, tui.AgentSnapshot{
 				ID:             inst.Agent.ID,
 				Name:           inst.Agent.Name,
@@ -283,6 +309,9 @@ func runWithTUI(
 				Task:           as.Task,
 				CommandsPerMin: cmds,
 				FilesSession:   files,
+				Permission:     string(inst.Agent.Permission),
+				Decisions:      decisions,
+				WorkNotesInfo:  workNotesInfo,
 			})
 		}
 

@@ -157,6 +157,9 @@ func (p *AgentsPanel) handleNormalKey(key string) (bool, *Command) {
 		p.confirmPrompt = fmt.Sprintf("Kill %s? This cannot be undone. [y/n]", agent.ID)
 		return true, nil
 
+	case "enter":
+		return true, nil
+
 	default:
 		return false, nil
 	}

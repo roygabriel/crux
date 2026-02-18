@@ -31,6 +31,7 @@ type Model struct {
 	activePanel Panel
 	agentsPanel AgentsPanel
 	logsPanel   LogsPanel
+	detailPanel DetailPanel
 	width       int
 	height      int
 	ready       bool
@@ -65,7 +66,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "q", "ctrl+c":
 			return m, tea.Quit
-		case "tab":
+		}
+
+		// Detail panel intercepts all other keys when visible.
+		if m.detailPanel.IsVisible() {
+			handled, cmd := m.detailPanel.HandleKey(key)
+			if handled && cmd != nil && m.commandBus != nil {
+				m.commandBus.Send(*cmd)
+			}
+			return m, nil
+		}
+
+		// Tab toggles panel focus (only when detail not visible).
+		if key == "tab" {
 			if m.activePanel == PanelAgents {
 				m.activePanel = PanelLogs
 			} else {
@@ -78,6 +91,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Panel-specific keys.
 		if m.activePanel == PanelAgents {
+			// Enter opens the detail view for the selected agent.
+			if key == "enter" {
+				if agent := m.agentsPanel.SelectedAgent(); agent != nil {
+					m.detailPanel.Open(agent)
+					innerW := m.width - 4
+					if innerW < 0 {
+						innerW = 0
+					}
+					innerH := m.height - 4
+					if innerH < 0 {
+						innerH = 0
+					}
+					m.detailPanel.SetSize(innerW, innerH)
+				}
+				return m, nil
+			}
+
 			handled, cmd := m.agentsPanel.HandleKey(key)
 			if handled {
 				if cmd != nil && m.commandBus != nil {
@@ -124,9 +154,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.agentsPanel.SetSize(innerW, agentsInnerH)
 		m.logsPanel.SetSize(innerW, logsInnerH)
 
+		detailInnerH := m.height - 4
+		if detailInnerH < 0 {
+			detailInnerH = 0
+		}
+		m.detailPanel.SetSize(innerW, detailInnerH)
+
 	case StateUpdateMsg:
 		m.state = msg.State
 		m.agentsPanel.SetAgents(msg.State.Agents)
+
+		// Refresh the detail panel if it's open.
+		if m.detailPanel.IsVisible() {
+			var found *AgentSnapshot
+			for i := range msg.State.Agents {
+				if msg.State.Agents[i].ID == m.detailPanel.agentID {
+					found = &msg.State.Agents[i]
+					break
+				}
+			}
+			m.detailPanel.Update(found)
+		}
+
 		return m, WaitForUpdate(m.bridge)
 
 	case LogEntryMsg:
@@ -138,10 +187,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View implements tea.Model. It renders a two-panel layout with agent status
-// on top and logs on the bottom.
+// on top and logs on the bottom, or a full-screen detail overlay.
 func (m Model) View() string {
 	if !m.ready {
 		return "Initializing..."
+	}
+
+	// Full-screen detail overlay when visible.
+	if m.detailPanel.IsVisible() {
+		innerW := m.width - 4
+		if innerW < 0 {
+			innerW = 0
+		}
+		innerH := m.height - 4
+		if innerH < 0 {
+			innerH = 0
+		}
+		content := m.detailPanel.View()
+		return focusedBorder.Width(innerW).Height(innerH).Render(content)
 	}
 
 	agentsHeight := m.height * 40 / 100

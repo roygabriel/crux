@@ -411,6 +411,243 @@ func TestModel_DetailView_RendersFullScreen(t *testing.T) {
 	}
 }
 
+func TestModel_HelpToggle(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+
+	// Press '?' to show help.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m2 := updated.(Model)
+	if !m2.helpOverlay.IsVisible() {
+		t.Error("help should be visible after '?'")
+	}
+
+	// Press '?' again to toggle off.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m3 := updated.(Model)
+	if m3.helpOverlay.IsVisible() {
+		t.Error("help should be hidden after second '?'")
+	}
+}
+
+func TestModel_AnyKeyDismissesHelp(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+
+	// Show help.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m2 := updated.(Model)
+	if !m2.helpOverlay.IsVisible() {
+		t.Fatal("help should be visible")
+	}
+
+	// Press any key (e.g., 'a') to dismiss.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m3 := updated.(Model)
+	if m3.helpOverlay.IsVisible() {
+		t.Error("help should be dismissed after pressing 'a'")
+	}
+}
+
+func TestModel_HelpBlocksOtherKeys(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.activePanel = PanelAgents
+
+	// Show help.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m2 := updated.(Model)
+
+	// Press tab while help is visible — should dismiss help, not switch panels.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m3 := updated.(Model)
+	if m3.helpOverlay.IsVisible() {
+		t.Error("help should be dismissed")
+	}
+	if m3.activePanel != PanelAgents {
+		t.Error("tab should not switch panels when help was visible")
+	}
+}
+
+func TestModel_HelpFromDetailView(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.agentsPanel.SetAgents([]AgentSnapshot{
+		{ID: "a1", Status: types.StatusBusy},
+	})
+	m.agentsPanel.SetFocused(true)
+	m.activePanel = PanelAgents
+	m.width = 120
+	m.height = 40
+
+	// Open detail.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := updated.(Model)
+	if !m2.detailPanel.IsVisible() {
+		t.Fatal("detail should be visible")
+	}
+
+	// Press '?' from detail view.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m3 := updated.(Model)
+	if !m3.helpOverlay.IsVisible() {
+		t.Error("help should be visible from detail view")
+	}
+}
+
+func TestModel_LogPanelFilterModeKeyRouting(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.logsPanel = NewLogsPanel(100)
+	now := time.Now()
+	for i := 0; i < 10; i++ {
+		m.logsPanel.Append(LogEntry{Time: now, Level: LogInfo, Message: "line"})
+	}
+	m.logsPanel.SetSize(80, 10)
+
+	// Switch to logs panel.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m2 := updated.(Model)
+
+	// Enter filter mode.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m3 := updated.(Model)
+	if !m3.logsPanel.IsFilterMode() {
+		t.Fatal("filter mode should be active")
+	}
+
+	// Type a character.
+	updated, _ = m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m4 := updated.(Model)
+	if m4.logsPanel.filterInput != "e" {
+		t.Errorf("filterInput = %q, want %q", m4.logsPanel.filterInput, "e")
+	}
+}
+
+func TestModel_TabBlockedDuringFilterMode(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.logsPanel = NewLogsPanel(100)
+	m.logsPanel.SetSize(80, 10)
+	m.activePanel = PanelLogs
+
+	// Enter filter mode.
+	m.logsPanel.filterMode = true
+
+	// Tab should not switch panels.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m2 := updated.(Model)
+	if m2.activePanel != PanelLogs {
+		t.Error("tab should not switch panels during filter mode")
+	}
+}
+
+func TestModel_LogsPanelKeysDelegatedThroughHandleKey(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.logsPanel = NewLogsPanel(100)
+	now := time.Now()
+	for i := 0; i < 20; i++ {
+		m.logsPanel.Append(LogEntry{Time: now, Level: LogInfo, Message: "line"})
+	}
+	m.logsPanel.SetSize(80, 10)
+
+	// Switch to logs panel.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m2 := updated.(Model)
+
+	// Press 'j' (scroll down — but since autoScroll is true and scrollPos=0, scrollDown doesn't change much).
+	// Press 'k' to scroll up.
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m3 := updated.(Model)
+	if m3.logsPanel.scrollPos != 1 {
+		t.Errorf("scrollPos = %d, want 1", m3.logsPanel.scrollPos)
+	}
+}
+
+func TestModel_StatusBarInView(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.state.PhaseName = "build"
+	m.state.Progress = "3/5"
+	m.state.Agents = []AgentSnapshot{
+		{ID: "a1", Status: types.StatusBusy},
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "Session:") {
+		t.Error("View should contain status bar with session duration")
+	}
+}
+
+func TestModel_StatusBarShowsDuration(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.startedAt = time.Now().Add(-14*time.Minute - 32*time.Second)
+
+	bar := m.renderStatusBar()
+	if !strings.Contains(bar, "Session: 14m32s") {
+		t.Errorf("status bar = %q, want to contain 'Session: 14m32s'", bar)
+	}
+}
+
+func TestModel_StatusBarShowsPhaseName(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.state.PhaseName = "build"
+	m.state.Progress = "2/4"
+
+	bar := m.renderStatusBar()
+	if !strings.Contains(bar, "build") {
+		t.Errorf("status bar = %q, want to contain 'build'", bar)
+	}
+	if !strings.Contains(bar, "2/4") {
+		t.Errorf("status bar = %q, want to contain '2/4'", bar)
+	}
+}
+
+func TestModel_QuitSendsCmdShutdown(t *testing.T) {
+	bus := NewCommandBus(4, slog.Default())
+	m := NewModel(NewStateBridge(1), nil, bus)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("expected quit cmd")
+	}
+
+	select {
+	case c := <-bus.Receive():
+		if c.Type != CmdShutdown {
+			t.Errorf("Type = %v, want CmdShutdown", c.Type)
+		}
+	default:
+		t.Fatal("expected CmdShutdown on bus")
+	}
+}
+
+func TestModel_QuitNilBusNoPanic(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+
+	// Should not panic with nil bus.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("expected quit cmd")
+	}
+}
+
+func TestModel_WindowSizeSetsHelpOverlaySize(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2 := updated.(Model)
+
+	if m2.helpOverlay.width != 120 {
+		t.Errorf("helpOverlay.width = %d, want 120", m2.helpOverlay.width)
+	}
+	if m2.helpOverlay.height != 40 {
+		t.Errorf("helpOverlay.height = %d, want 40", m2.helpOverlay.height)
+	}
+}
+
 func TestModel_DetailView_SendMessage(t *testing.T) {
 	bus := NewCommandBus(4, slog.Default())
 	m := NewModel(NewStateBridge(1), nil, bus)

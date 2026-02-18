@@ -20,6 +20,8 @@ const (
 	CmdForceAdvance
 	// CmdSendMessage sends a text message to an agent.
 	CmdSendMessage
+	// CmdShutdown requests a graceful shutdown of the orchestrator.
+	CmdShutdown
 )
 
 // String returns a human-readable label for a CommandType.
@@ -35,6 +37,8 @@ func (ct CommandType) String() string {
 		return "force-advance"
 	case CmdSendMessage:
 		return "send-message"
+	case CmdShutdown:
+		return "shutdown"
 	default:
 		return "unknown"
 	}

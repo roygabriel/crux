@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -52,19 +53,25 @@ var (
 	logStyleOK    = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))  // green
 	logStyleWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))  // yellow
 	logStyleError = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))  // red
+
+	filterInputStyle = lipgloss.NewStyle().Underline(true)
+	filterBadgeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Background(lipgloss.Color("236"))
 )
 
 // LogsPanel displays a scrollable circular buffer of log entries.
 type LogsPanel struct {
-	entries    []LogEntry
-	capacity   int
-	head       int
-	count      int
-	autoScroll bool
-	scrollPos  int
-	focused    bool
-	width      int
-	height     int
+	entries      []LogEntry
+	capacity     int
+	head         int
+	count        int
+	autoScroll   bool
+	scrollPos    int
+	focused      bool
+	width        int
+	height       int
+	filterMode   bool
+	filterInput  string
+	filterActive string
 }
 
 // NewLogsPanel creates a logs panel with the given buffer capacity.
@@ -124,6 +131,95 @@ func (p *LogsPanel) SetFocused(focused bool) {
 	p.focused = focused
 }
 
+// IsFilterMode returns whether the filter input is currently active.
+func (p *LogsPanel) IsFilterMode() bool {
+	return p.filterMode
+}
+
+// ClearFilter clears all filter state.
+func (p *LogsPanel) ClearFilter() {
+	p.filterActive = ""
+	p.filterInput = ""
+	p.filterMode = false
+}
+
+// HandleKey processes a key press in the logs panel. It returns whether the key
+// was handled and an optional command to send.
+func (p *LogsPanel) HandleKey(key string) (handled bool, cmd *Command) {
+	if p.filterMode {
+		return p.handleFilterKey(key), nil
+	}
+	return p.handleNormalKey(key), nil
+}
+
+func (p *LogsPanel) handleNormalKey(key string) bool {
+	switch key {
+	case "f":
+		p.filterMode = true
+		p.filterInput = p.filterActive
+		return true
+	case "up", "k":
+		p.ScrollUp(1)
+		return true
+	case "down", "j":
+		p.ScrollDown(1)
+		return true
+	case "pgup":
+		p.ScrollUp(10)
+		return true
+	case "pgdown":
+		p.ScrollDown(10)
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *LogsPanel) handleFilterKey(key string) bool {
+	switch key {
+	case "enter":
+		p.filterActive = p.filterInput
+		p.filterMode = false
+		p.scrollPos = 0
+		p.autoScroll = true
+		return true
+	case "esc":
+		p.filterInput = ""
+		p.filterActive = ""
+		p.filterMode = false
+		return true
+	case "backspace":
+		if len(p.filterInput) > 0 {
+			_, size := utf8.DecodeLastRuneInString(p.filterInput)
+			p.filterInput = p.filterInput[:len(p.filterInput)-size]
+		}
+		return true
+	default:
+		if utf8.RuneCountInString(key) == 1 {
+			p.filterInput += key
+		}
+		return true
+	}
+}
+
+// filteredEntries returns entries matching the filter via case-insensitive
+// substring search against level, source, and message.
+func filteredEntries(entries []LogEntry, filter string) []LogEntry {
+	if filter == "" {
+		return entries
+	}
+	lower := strings.ToLower(filter)
+	var result []LogEntry
+	for _, e := range entries {
+		if strings.Contains(strings.ToLower(e.Level.String()), lower) ||
+			strings.Contains(strings.ToLower(e.Source), lower) ||
+			strings.Contains(strings.ToLower(e.Message), lower) {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
 // View renders the visible log entries.
 func (p *LogsPanel) View() string {
 	if p.count == 0 {
@@ -132,10 +228,32 @@ func (p *LogsPanel) View() string {
 
 	ordered := p.orderedEntries()
 
+	// Apply filter if active.
+	if p.filterActive != "" {
+		ordered = filteredEntries(ordered, p.filterActive)
+	}
+
 	// Determine visible window from the bottom (newest).
 	visibleHeight := p.height
 	if visibleHeight <= 0 {
 		visibleHeight = 10
+	}
+
+	var b strings.Builder
+
+	// Render filter bar if in filter mode or filter is active.
+	if p.filterMode {
+		b.WriteString(filterInputStyle.Render(fmt.Sprintf("Filter: %s_", p.filterInput)))
+		b.WriteByte('\n')
+		visibleHeight--
+	} else if p.filterActive != "" {
+		b.WriteString(filterBadgeStyle.Render(fmt.Sprintf(" filter: %s ", p.filterActive)))
+		b.WriteByte('\n')
+		visibleHeight--
+	}
+
+	if visibleHeight < 0 {
+		visibleHeight = 0
 	}
 
 	end := len(ordered) - p.scrollPos
@@ -147,7 +265,6 @@ func (p *LogsPanel) View() string {
 		start = 0
 	}
 
-	var b strings.Builder
 	for i := start; i < end; i++ {
 		e := ordered[i]
 		b.WriteString(formatLogEntry(e, p.width))

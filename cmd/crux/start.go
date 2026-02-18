@@ -258,6 +258,10 @@ func runWithTUI(
 					if err := messenger.Send(ctx, cmd.AgentID, msg); err != nil {
 						logger.Warn("send message failed", "agent_id", cmd.AgentID, "error", err)
 					}
+
+				case tui.CmdShutdown:
+					logger.Info("shutdown command received from TUI")
+					stop()
 				}
 			default:
 				return

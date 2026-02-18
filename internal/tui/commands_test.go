@@ -85,6 +85,7 @@ func TestCommandType_String(t *testing.T) {
 		{CmdKillAgent, "kill"},
 		{CmdForceAdvance, "force-advance"},
 		{CmdSendMessage, "send-message"},
+		{CmdShutdown, "shutdown"},
 		{CommandType(99), "unknown"},
 	}
 

@@ -193,6 +193,37 @@ func (m *Manager) UpdatePhase(sessionID, phaseID string, promptNum int) error {
 	return m.Save(sc)
 }
 
+// List returns all sessions in chronological order (oldest first).
+// Corrupt files are skipped with a warning.
+func (m *Manager) List() ([]SessionContext, error) {
+	entries, err := os.ReadDir(m.sessionsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading sessions directory: %w", err)
+	}
+
+	var jsonFiles []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			jsonFiles = append(jsonFiles, entry.Name())
+		}
+	}
+	sort.Strings(jsonFiles)
+
+	sessions := make([]SessionContext, 0, len(jsonFiles))
+	for _, name := range jsonFiles {
+		sc, err := m.loadFile(filepath.Join(m.sessionsDir, name))
+		if err != nil {
+			m.logger.Warn("skipping corrupt session file", "file", name, "error", err)
+			continue
+		}
+		sessions = append(sessions, *sc)
+	}
+	return sessions, nil
+}
+
 // loadFile reads and unmarshals a session file.
 func (m *Manager) loadFile(path string) (*SessionContext, error) {
 	data, err := os.ReadFile(path)

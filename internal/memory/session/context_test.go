@@ -263,3 +263,72 @@ func TestSaveOverwrites(t *testing.T) {
 		t.Errorf("expected summary %q, got %q", "second", loaded.Summary)
 	}
 }
+
+func TestList(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+
+	// List on empty dir.
+	sessions, err := m.List()
+	if err != nil {
+		t.Fatalf("List() error: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions, got %d", len(sessions))
+	}
+
+	// Create sessions.
+	sc1, err := m.Start()
+	if err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+	sc2, err := m.Start()
+	if err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+
+	sessions, err = m.List()
+	if err != nil {
+		t.Fatalf("List() error: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(sessions))
+	}
+
+	// Verify both sessions are present.
+	ids := map[string]bool{sessions[0].ID: true, sessions[1].ID: true}
+	if !ids[sc1.ID] || !ids[sc2.ID] {
+		t.Errorf("List() returned unexpected IDs: got %v, want %s and %s",
+			ids, sc1.ID, sc2.ID)
+	}
+}
+
+func TestListSkipsCorruptFiles(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "sessions")
+	os.MkdirAll(dir, 0o755)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	m := session.NewManager(dir, nil, logger)
+
+	// Create a valid session.
+	sc, err := m.Start()
+	if err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+
+	// Write a corrupt file.
+	corrupt := filepath.Join(dir, "20250101T000000Z_corrupt.json")
+	os.WriteFile(corrupt, []byte("{invalid json"), 0o644)
+
+	sessions, err := m.List()
+	if err != nil {
+		t.Fatalf("List() error: %v", err)
+	}
+
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 valid session, got %d", len(sessions))
+	}
+	if sessions[0].ID != sc.ID {
+		t.Errorf("expected ID %q, got %q", sc.ID, sessions[0].ID)
+	}
+}

@@ -1,0 +1,133 @@
+name: SonarQube
+
+on:
+  pull_request:
+    branches:
+      - dev
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: sonar-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonar-pr:
+    name: SonarQube Scan (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.7"
+          cache: false
+
+      - name: Generate Go coverage
+        run: |
+          set -o pipefail
+          go test -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cmd/ui/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: cmd/ui/frontend
+        run: npm ci
+
+      - name: Generate frontend coverage
+        continue-on-error: true
+        working-directory: cmd/ui/frontend
+        run: npx vitest run --coverage --coverage.reportOnFailure=true --reporter=default
+
+      - name: Verify coverage files
+        run: |
+          test -f coverage.out || (echo "Missing Go coverage.out" && exit 1)
+          test -f cmd/ui/frontend/coverage/lcov.info || (echo "Missing frontend lcov.info" && exit 1)
+
+      - name: Run SonarQube scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
+
+  sonar-nightly:
+    name: SonarQube Scan (Nightly ${{ matrix.target_branch }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target_branch:
+          - dev
+          - main
+
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.target_branch }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.7"
+          cache: false
+
+      - name: Generate Go coverage
+        run: |
+          set -o pipefail
+          go test -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cmd/ui/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: cmd/ui/frontend
+        run: npm ci
+
+      - name: Generate frontend coverage
+        continue-on-error: true
+        working-directory: cmd/ui/frontend
+        run: npx vitest run --coverage --coverage.reportOnFailure=true --reporter=default
+
+      - name: Verify coverage files
+        run: |
+          test -f coverage.out || (echo "Missing Go coverage.out" && exit 1)
+          test -f cmd/ui/frontend/coverage/lcov.info || (echo "Missing frontend lcov.info" && exit 1)
+
+      - name: Run SonarQube scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}

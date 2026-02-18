@@ -351,6 +351,66 @@ func (d *Distributor) NeedsReload(agentID string) bool {
 	return method == ReloadMemoryRefresh || method == ReloadNewSession
 }
 
+// PreviewForAgent renders instruction files for an agent without writing to
+// disk. Returns the prepared files and the render result.
+func (d *Distributor) PreviewForAgent(ctx context.Context, agentID string) ([]InstructionFile, *RenderResult, error) {
+	role := d.agents.AgentRole(agentID)
+	cli := d.agents.AgentCLI(agentID)
+
+	adapter, err := AdapterForCLI(cli)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get adapter for agent %s: %w", agentID, err)
+	}
+
+	data, err := d.aggregator.Build(ctx, agentID, role)
+	if err != nil {
+		return nil, nil, fmt.Errorf("aggregate context for agent %s: %w", agentID, err)
+	}
+
+	result, err := d.renderer.Render(*data, adapter.TokenBudget())
+	if err != nil {
+		return nil, nil, fmt.Errorf("render instructions for agent %s: %w", agentID, err)
+	}
+
+	existingFiles := d.readExistingFiles(adapter, result, d.projectRoot)
+	files, err := adapter.PrepareFiles(result, d.projectRoot, existingFiles)
+	if err != nil {
+		return nil, nil, fmt.Errorf("prepare files for agent %s: %w", agentID, err)
+	}
+
+	return files, result, nil
+}
+
+// PreviewForRole renders instructions for a given role and CLI without
+// requiring an agent configuration. Useful for standalone preview.
+func (d *Distributor) PreviewForRole(ctx context.Context, role RoleName, cli AgentCLI, budget int) ([]InstructionFile, *RenderResult, error) {
+	adapter, err := AdapterForCLI(cli)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get adapter for cli %s: %w", cli, err)
+	}
+
+	if budget <= 0 {
+		budget = adapter.TokenBudget()
+	}
+
+	data, err := d.aggregator.Build(ctx, "preview", role)
+	if err != nil {
+		return nil, nil, fmt.Errorf("aggregate context: %w", err)
+	}
+
+	result, err := d.renderer.Render(*data, budget)
+	if err != nil {
+		return nil, nil, fmt.Errorf("render instructions: %w", err)
+	}
+
+	files, err := adapter.PrepareFiles(result, d.projectRoot, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("prepare files: %w", err)
+	}
+
+	return files, result, nil
+}
+
 // readExistingFiles reads current on-disk content for files that the adapter
 // might produce. This enables marker preservation in adapters.
 func (d *Distributor) readExistingFiles(adapter AgentAdapter, _ *RenderResult, projectRoot string) map[string]string {

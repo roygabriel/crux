@@ -85,6 +85,7 @@ function HeroSection() {
               <strong>Heads up:</strong> Crux is in early alpha. We're shipping fast and things will break.
               If you hit a bug or something feels off, we'd genuinely appreciate you{' '}
               <Link href="https://github.com/roygabriel/crux/issues">opening an issue</Link> so we can fix it.
+              Have an enhancement idea that's not on our roadmap? Open one there too.
             </p>
           </div>
         </div>

@@ -115,4 +115,7 @@ func TestBudgetConstants(t *testing.T) {
 	if BudgetGemini <= BudgetCodex {
 		t.Error("BudgetGemini should be larger than BudgetCodex")
 	}
+	if BudgetCopilot <= BudgetClaude || BudgetCopilot >= BudgetCodex {
+		t.Error("BudgetCopilot should be between BudgetClaude and BudgetCodex")
+	}
 }

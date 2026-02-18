@@ -63,12 +63,17 @@ type Orchestrator struct {
 	// distributor generates and writes per-agent instruction files.
 	distributor *instruct.Distributor
 
+	// instructOrch builds the orchestrator's own system prompt.
+	instructOrch *instruct.OrchestratorPromptBuilder
+
 	// conflicts detects and resolves file conflicts between parallel agents.
 	conflicts *ConflictDetector
 
 	// paneContent stores the latest captured content per agent, guarded by mu.
-	mu          sync.Mutex
-	paneContent map[types.AgentID]string
+	// orchestratorPrompt holds the latest rendered orchestrator system prompt.
+	mu                 sync.Mutex
+	paneContent        map[types.AgentID]string
+	orchestratorPrompt string
 
 	// prevStatus tracks previous agent status for transition detection.
 	prevStatus map[types.AgentID]types.AgentStatus
@@ -145,6 +150,20 @@ func (o *Orchestrator) SetDistributor(d *instruct.Distributor) {
 	o.distributor = d
 }
 
+// SetOrchestratorPromptBuilder configures the builder used to generate the
+// orchestrator's own system prompt.
+func (o *Orchestrator) SetOrchestratorPromptBuilder(b *instruct.OrchestratorPromptBuilder) {
+	o.instructOrch = b
+}
+
+// OrchestratorPrompt returns the latest rendered orchestrator system prompt.
+// Thread-safe.
+func (o *Orchestrator) OrchestratorPrompt() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.orchestratorPrompt
+}
+
 // SetTmuxSessionManager sets the tmux session manager used to create
 // the top-level session that hosts agent panes.
 func (o *Orchestrator) SetTmuxSessionManager(sm *tmux.SessionManager) {
@@ -214,6 +233,9 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 			o.logger.Warn("instruction generation failed", "error", err)
 		}
 	}
+
+	// Build the orchestrator's own system prompt.
+	o.buildOrchestratorPrompt(ctx)
 
 	// Spawn configured agents.
 	if err := o.spawnAgents(ctx); err != nil {
@@ -398,6 +420,9 @@ func (o *Orchestrator) handleTransition(
 			PhaseID:      existing.PhaseID,
 			AssignedAt:   existing.AssignedAt,
 		})
+		// Regenerate this agent's instructions — error context may require
+		// a different assignment or updated guidance.
+		o.regenerateAgentInstructions(ctx, id)
 
 	case types.StatusRateLimited:
 		retryAfter, _ := inst.Plugin.DetectRateLimit(content)
@@ -524,25 +549,99 @@ func (o *Orchestrator) handlePromptResponse(ctx context.Context, inst *agent.Age
 // are reloaded immediately. Restart-based agents (Claude, Copilot) are
 // only flagged; the orchestrator handles restart at session boundaries.
 func (o *Orchestrator) regenerateInstructions(ctx context.Context) {
+	if o.distributor != nil {
+		for _, inst := range o.registry.List() {
+			agentID := string(inst.Agent.ID)
+			changed, err := o.distributor.RegenerateIfStale(ctx, agentID)
+			if err != nil {
+				o.logger.Warn("instruction regeneration failed",
+					"agent_id", agentID, "error", err)
+				continue
+			}
+			if changed && o.distributor.NeedsReload(agentID) {
+				if err := o.distributor.ReloadAgent(ctx, agentID); err != nil {
+					o.logger.Warn("agent reload failed",
+						"agent_id", agentID, "error", err)
+				}
+			}
+		}
+	}
+
+	// Rebuild the orchestrator prompt — phase context has changed.
+	o.buildOrchestratorPrompt(ctx)
+}
+
+// buildOrchestratorPrompt renders the orchestrator system prompt from the
+// current world state and stores it for retrieval via OrchestratorPrompt().
+func (o *Orchestrator) buildOrchestratorPrompt(ctx context.Context) {
+	if o.instructOrch == nil {
+		return
+	}
+
+	content, err := o.instructOrch.BuildWithWorldState(ctx, o.worldState.Compact())
+	if err != nil {
+		o.logger.Warn("orchestrator prompt build failed", "error", err)
+		return
+	}
+
+	o.mu.Lock()
+	o.orchestratorPrompt = content
+	o.mu.Unlock()
+
+	o.logger.Info("orchestrator prompt built",
+		"tokens", instruct.EstimateTokens(content),
+	)
+	o.logInstructionEvent(ctx, "build_orchestrator_prompt",
+		fmt.Sprintf("rendered orchestrator prompt (%d tokens)", instruct.EstimateTokens(content)))
+}
+
+// regenerateAgentInstructions re-renders the instruction file for a single
+// agent and reloads it if the agent supports mid-session reload.
+func (o *Orchestrator) regenerateAgentInstructions(ctx context.Context, agentID types.AgentID) {
 	if o.distributor == nil {
 		return
 	}
 
-	for _, inst := range o.registry.List() {
-		agentID := string(inst.Agent.ID)
-		changed, err := o.distributor.RegenerateIfStale(ctx, agentID)
-		if err != nil {
-			o.logger.Warn("instruction regeneration failed",
-				"agent_id", agentID, "error", err)
-			continue
-		}
-		if changed && o.distributor.NeedsReload(agentID) {
-			if err := o.distributor.ReloadAgent(ctx, agentID); err != nil {
-				o.logger.Warn("agent reload failed",
-					"agent_id", agentID, "error", err)
-			}
+	id := string(agentID)
+	changed, err := o.distributor.RegenerateIfStale(ctx, id)
+	if err != nil {
+		o.logger.Warn("agent instruction regeneration failed",
+			"agent_id", id, "error", err)
+		return
+	}
+	if changed && o.distributor.NeedsReload(id) {
+		if err := o.distributor.ReloadAgent(ctx, id); err != nil {
+			o.logger.Warn("agent reload failed",
+				"agent_id", id, "error", err)
 		}
 	}
+	o.logInstructionEvent(ctx, "regenerate_agent_instructions",
+		fmt.Sprintf("agent=%s changed=%t", id, changed))
+}
+
+// logInstructionEvent records an instruction-related decision to the journal.
+func (o *Orchestrator) logInstructionEvent(ctx context.Context, action, detail string) {
+	if o.journal == nil {
+		return
+	}
+
+	var phaseID types.PhaseID
+	var promptNum int
+	if spec := o.engine.CurrentPhase(); spec != nil {
+		phaseID = spec.ID
+	}
+	if prompt := o.engine.CurrentPrompt(); prompt != nil {
+		promptNum = prompt.PromptNumber
+	}
+
+	_ = o.journal.Record(ctx, types.Decision{
+		AgentID:   "orchestrator",
+		PhaseID:   phaseID,
+		PromptNum: promptNum,
+		Context:   "instruction regeneration",
+		Action:    action,
+		Rationale: detail,
+	})
 }
 
 // spawnAgents creates tmux panes and launches agents per config.

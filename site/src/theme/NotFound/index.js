@@ -1,6 +1,6 @@
 import React from 'react';
 import Layout from '@theme/Layout';
-import styles from './404.module.css';
+import styles from './styles.module.css';
 
 export default function NotFound() {
     return (

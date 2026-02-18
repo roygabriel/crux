@@ -66,7 +66,7 @@ type TUIModel struct {
 
 	messages    []chatMessage
 	streaming   bool
-	streamBuf   strings.Builder
+	streamBuf   *strings.Builder
 	phaseCount  int
 	initialMsg  string
 
@@ -101,6 +101,7 @@ func NewTUIModel(agent *Agent, projectRoot string) TUIModel {
 	return TUIModel{
 		agent:       agent,
 		projectRoot: projectRoot,
+		streamBuf:   &strings.Builder{},
 		viewport:    vp,
 		input:       ta,
 		renderer:    renderer,

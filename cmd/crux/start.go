@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"os"
 
 	"github.com/roygabriel/crux/internal/agent"
 	"github.com/roygabriel/crux/internal/config"
@@ -40,13 +41,27 @@ var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the orchestration loop",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		log := setupLogger()
+		var log *slog.Logger
+		var logBridge *tui.LogBridge
+
+		if headlessFlag {
+			log = setupLogger()
+		} else {
+			logBridge = tui.NewLogBridge(64)
+			log = slog.New(logBridge)
+			slog.SetDefault(log)
+		}
 
 		log.Info("loading configuration", "path", cfgFile)
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
+
+		if err := validateGitRepo(cfg.Project.Root); err != nil {
+			return err
+		}
+
 		log.Info("starting orchestration", "project", cfg.Project.Name)
 
 		// SQLite store.
@@ -189,13 +204,27 @@ var startCmd = &cobra.Command{
 			return orch.Stop(context.Background())
 		}
 
-		return runWithTUI(ctx, stop, orch, registry, engine, messenger, rateLimiter, tracker, auditLogger, j, notesMgr, log)
+		return runWithTUI(ctx, stop, orch, registry, engine, messenger, rateLimiter, tracker, auditLogger, j, notesMgr, logBridge, log)
 	},
 }
 
 func init() {
 	startCmd.Flags().BoolVar(&headlessFlag, "headless", false, "Run without the terminal dashboard (for CI/scripting)")
 	startCmd.Flags().BoolVar(&noInstructFlag, "no-instruct", false, "Skip instruction file generation on start")
+}
+
+// validateGitRepo checks that root is inside a git work tree with at least
+// one commit. It returns a user-friendly error when either condition fails.
+func validateGitRepo(root string) error {
+	check := exec.Command("git", "-C", root, "rev-parse", "--is-inside-work-tree")
+	if err := check.Run(); err != nil {
+		return fmt.Errorf("project root is not a git repository\n\nRun 'git init && git add -A && git commit -m \"initial\"' in %s", root)
+	}
+	head := exec.Command("git", "-C", root, "rev-parse", "--verify", "HEAD")
+	if err := head.Run(); err != nil {
+		return fmt.Errorf("git repository has no commits\n\nCreate an initial commit before running crux start")
+	}
+	return nil
 }
 
 // runWithTUI starts the orchestrator in a background goroutine and runs the
@@ -212,15 +241,10 @@ func runWithTUI(
 	auditLogger *security.AuditLogger,
 	j *journal.Journal,
 	notesMgr *worknotes.Manager,
+	logBridge *tui.LogBridge,
 	logger *slog.Logger,
 ) error {
 	bridge := tui.NewStateBridge(1)
-	logBridge := tui.NewLogBridge(64)
-
-	// Redirect slog output into the TUI log panel.
-	tuiLogger := slog.New(logBridge)
-	slog.SetDefault(tuiLogger)
-	logger = tuiLogger
 
 	commandBus := tui.NewCommandBus(16, logger)
 	worldState := orch.WorldState()

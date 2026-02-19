@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/roygabriel/crux/internal/config"
@@ -125,5 +127,67 @@ func TestInstructionFilesMissing_DetectsAbsent(t *testing.T) {
 
 	if instructionFilesMissing(cfg) {
 		t.Error("expected instructionFilesMissing to return false after generation")
+	}
+}
+
+func TestValidateGitRepo(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T, dir string)
+		wantErr string
+	}{
+		{
+			name:    "not a git repo",
+			setup:   func(t *testing.T, dir string) {},
+			wantErr: "not a git repository",
+		},
+		{
+			name: "git init but no commits",
+			setup: func(t *testing.T, dir string) {
+				cmd := exec.Command("git", "init", dir)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("git init: %v\n%s", err, out)
+				}
+			},
+			wantErr: "no commits",
+		},
+		{
+			name: "valid repo with commit",
+			setup: func(t *testing.T, dir string) {
+				for _, args := range [][]string{
+					{"git", "init", dir},
+					{"git", "-C", dir, "config", "user.email", "test@test.com"},
+					{"git", "-C", dir, "config", "user.name", "Test"},
+					{"git", "-C", dir, "commit", "--allow-empty", "-m", "initial"},
+				} {
+					cmd := exec.Command(args[0], args[1:]...)
+					if out, err := cmd.CombinedOutput(); err != nil {
+						t.Fatalf("%s: %v\n%s", args, err, out)
+					}
+				}
+			},
+			wantErr: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tc.setup(t, dir)
+
+			err := validateGitRepo(dir)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error %q does not contain %q", err.Error(), tc.wantErr)
+			}
+		})
 	}
 }

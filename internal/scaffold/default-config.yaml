@@ -37,6 +37,12 @@ security:
     - ".env"
     - ".crux/audit.log"
 
+execution:
+  deterministic_enabled: true
+  run_timeout: 7m
+  idle_timeout: 90s
+  startup_inflight_grace: 20s
+
 # Context token budgets for orchestrator prompts.
 # context:
 #   total_budget: 8000

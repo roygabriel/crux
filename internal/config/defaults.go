@@ -33,5 +33,11 @@ func DefaultConfig() *Config {
 			Reserve:      3200,
 			ReadyTimeout: "20s",
 		},
+		Execution: ExecutionConfig{
+			DeterministicEnabled: true,
+			RunTimeout:           "7m",
+			IdleTimeout:          "90s",
+			StartupInflightGrace: "20s",
+		},
 	}
 }

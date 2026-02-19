@@ -26,6 +26,8 @@ type Config struct {
 	Security SecurityConfig `yaml:"security" json:"security"`
 	// Context configures the orchestrator context budget.
 	Context ContextConfig `yaml:"context" json:"context,omitempty"`
+	// Execution configures deterministic runner behavior.
+	Execution ExecutionConfig `yaml:"execution" json:"execution,omitempty"`
 	// Planner configures the planning agent.
 	Planner PlannerConfig `yaml:"planner" json:"planner,omitempty"`
 	// Docgen configures the document generation agent.
@@ -148,6 +150,18 @@ type ContextConfig struct {
 	ReadyTimeout string `yaml:"ready_timeout" json:"ready_timeout,omitempty"`
 }
 
+// ExecutionConfig configures deterministic task execution and recovery timeouts.
+type ExecutionConfig struct {
+	// DeterministicEnabled enables deterministic runner dispatch for supported plugins.
+	DeterministicEnabled bool `yaml:"deterministic_enabled" json:"deterministic_enabled,omitempty"`
+	// RunTimeout is the hard timeout for a single deterministic task run.
+	RunTimeout string `yaml:"run_timeout" json:"run_timeout,omitempty"`
+	// IdleTimeout is the inactivity timeout when no JSONL events are produced.
+	IdleTimeout string `yaml:"idle_timeout" json:"idle_timeout,omitempty"`
+	// StartupInflightGrace is additional grace before forced in-flight reconciliation.
+	StartupInflightGrace string `yaml:"startup_inflight_grace" json:"startup_inflight_grace,omitempty"`
+}
+
 // Load reads a YAML configuration file, applies environment variable
 // overrides with the CRUX_ prefix, and validates the result.
 func Load(path string) (*Config, error) {
@@ -240,6 +254,33 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("context.ready_timeout must be non-negative")
 		}
 	}
+	if strings.TrimSpace(c.Execution.RunTimeout) != "" {
+		d, err := time.ParseDuration(strings.TrimSpace(c.Execution.RunTimeout))
+		if err != nil {
+			return fmt.Errorf("execution.run_timeout: invalid duration %q", c.Execution.RunTimeout)
+		}
+		if d <= 0 {
+			return fmt.Errorf("execution.run_timeout must be positive")
+		}
+	}
+	if strings.TrimSpace(c.Execution.IdleTimeout) != "" {
+		d, err := time.ParseDuration(strings.TrimSpace(c.Execution.IdleTimeout))
+		if err != nil {
+			return fmt.Errorf("execution.idle_timeout: invalid duration %q", c.Execution.IdleTimeout)
+		}
+		if d <= 0 {
+			return fmt.Errorf("execution.idle_timeout must be positive")
+		}
+	}
+	if strings.TrimSpace(c.Execution.StartupInflightGrace) != "" {
+		d, err := time.ParseDuration(strings.TrimSpace(c.Execution.StartupInflightGrace))
+		if err != nil {
+			return fmt.Errorf("execution.startup_inflight_grace: invalid duration %q", c.Execution.StartupInflightGrace)
+		}
+		if d <= 0 {
+			return fmt.Errorf("execution.startup_inflight_grace must be positive")
+		}
+	}
 
 	return nil
 }
@@ -259,6 +300,9 @@ func applyEnvOverrides(cfg *Config) {
 		"CRUX_PHASES_SPEC_DIR":           &cfg.Phases.SpecDir,
 		"CRUX_SECURITY_AUDIT_LOG":        &cfg.Security.AuditLog,
 		"CRUX_CONTEXT_READY_TIMEOUT":     &cfg.Context.ReadyTimeout,
+		"CRUX_EXECUTION_RUN_TIMEOUT":     &cfg.Execution.RunTimeout,
+		"CRUX_EXECUTION_IDLE_TIMEOUT":    &cfg.Execution.IdleTimeout,
+		"CRUX_EXECUTION_STARTUP_GRACE":   &cfg.Execution.StartupInflightGrace,
 	}
 
 	for env, field := range overrides {
@@ -300,6 +344,15 @@ func applyEnvOverrides(cfg *Config) {
 			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
 				*field = n
 			}
+		}
+	}
+
+	if v, ok := os.LookupEnv("CRUX_EXECUTION_DETERMINISTIC_ENABLED"); ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			cfg.Execution.DeterministicEnabled = true
+		case "0", "false", "no", "off":
+			cfg.Execution.DeterministicEnabled = false
 		}
 	}
 }

@@ -408,6 +408,89 @@ func TestValidateReadyTimeout(t *testing.T) {
 	}
 }
 
+func TestValidateExecutionTimeouts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		errSub string
+	}{
+		{
+			name: "invalid run_timeout",
+			mutate: func(c *Config) {
+				c.Execution.RunTimeout = "abc"
+			},
+			errSub: "execution.run_timeout: invalid duration",
+		},
+		{
+			name: "non-positive run_timeout",
+			mutate: func(c *Config) {
+				c.Execution.RunTimeout = "0s"
+			},
+			errSub: "execution.run_timeout must be positive",
+		},
+		{
+			name: "invalid idle_timeout",
+			mutate: func(c *Config) {
+				c.Execution.IdleTimeout = "abc"
+			},
+			errSub: "execution.idle_timeout: invalid duration",
+		},
+		{
+			name: "non-positive idle_timeout",
+			mutate: func(c *Config) {
+				c.Execution.IdleTimeout = "-1s"
+			},
+			errSub: "execution.idle_timeout must be positive",
+		},
+		{
+			name: "invalid startup_inflight_grace",
+			mutate: func(c *Config) {
+				c.Execution.StartupInflightGrace = "abc"
+			},
+			errSub: "execution.startup_inflight_grace: invalid duration",
+		},
+		{
+			name: "non-positive startup_inflight_grace",
+			mutate: func(c *Config) {
+				c.Execution.StartupInflightGrace = "0s"
+			},
+			errSub: "execution.startup_inflight_grace must be positive",
+		},
+		{
+			name: "valid execution durations",
+			mutate: func(c *Config) {
+				c.Execution.RunTimeout = "7m"
+				c.Execution.IdleTimeout = "90s"
+				c.Execution.StartupInflightGrace = "20s"
+			},
+			errSub: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := DefaultConfig()
+			tt.mutate(cfg)
+			err := cfg.Validate()
+			if tt.errSub == "" {
+				if err != nil {
+					t.Fatalf("Validate() unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("Validate() expected error, got nil")
+			}
+			if !contains(err.Error(), tt.errSub) {
+				t.Fatalf("Validate() error = %q, want substring %q", err.Error(), tt.errSub)
+			}
+		})
+	}
+}
+
 func TestLoadContextReadyTimeoutEnvOverride(t *testing.T) {
 	yaml := `
 project:
@@ -428,6 +511,41 @@ memory:
 	}
 	if cfg.Context.ReadyTimeout != "33s" {
 		t.Fatalf("Context.ReadyTimeout = %q, want %q", cfg.Context.ReadyTimeout, "33s")
+	}
+}
+
+func TestLoadExecutionEnvOverrides(t *testing.T) {
+	yaml := `
+project:
+  name: "test"
+  root: "."
+  state_dir: ".crux"
+
+memory:
+  sqlite_path: ".crux/memory.db"
+  vector_dir: ".crux/vectors"
+`
+	path := writeTempYAML(t, yaml)
+	t.Setenv("CRUX_EXECUTION_DETERMINISTIC_ENABLED", "false")
+	t.Setenv("CRUX_EXECUTION_RUN_TIMEOUT", "11m")
+	t.Setenv("CRUX_EXECUTION_IDLE_TIMEOUT", "75s")
+	t.Setenv("CRUX_EXECUTION_STARTUP_GRACE", "33s")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Execution.DeterministicEnabled {
+		t.Fatalf("Execution.DeterministicEnabled = true, want false")
+	}
+	if cfg.Execution.RunTimeout != "11m" {
+		t.Fatalf("Execution.RunTimeout = %q, want %q", cfg.Execution.RunTimeout, "11m")
+	}
+	if cfg.Execution.IdleTimeout != "75s" {
+		t.Fatalf("Execution.IdleTimeout = %q, want %q", cfg.Execution.IdleTimeout, "75s")
+	}
+	if cfg.Execution.StartupInflightGrace != "33s" {
+		t.Fatalf("Execution.StartupInflightGrace = %q, want %q", cfg.Execution.StartupInflightGrace, "33s")
 	}
 }
 

@@ -1,8 +1,8 @@
 {
-  "lastUpdated": "2026-02-19T02:29:32.077Z",
+  "lastUpdated": "2026-02-19T06:29:21.007Z",
   "quarters": [
     {
-      "label": "Q1 2026",
+      "label": "Q2 2026",
       "items": [
         {
           "title": "Git Worktree Isolation",
@@ -42,7 +42,7 @@
       ]
     },
     {
-      "label": "Q2 2026",
+      "label": "Q3 2026",
       "items": [
         {
           "title": "Issue to Phase Auto-Decomposition",
@@ -82,7 +82,7 @@
       ]
     },
     {
-      "label": "Q3 2026",
+      "label": "Q4 2026",
       "items": [
         {
           "title": "Codebase Context Engine",

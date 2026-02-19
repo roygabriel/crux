@@ -2,8 +2,12 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +26,25 @@ import (
 const defaultPollInterval = 2 * time.Second
 const defaultReadyTimeout = 20 * time.Second
 const noAvailableAgentLogInterval = 10 * time.Second
+const dispatchBackoffBase = 2 * time.Second
+const dispatchBackoffMax = 60 * time.Second
+const dispatchFailureThreshold = 2
+const dispatchRepeatThreshold = 3
+const cooldownLogInterval = 8 * time.Second
+
+var errDispatchCoolingDown = errors.New("dispatch cooling down")
+
+type promptKey struct {
+	phaseID   types.PhaseID
+	promptNum int
+}
+
+type dispatchFingerprint struct {
+	phaseID    types.PhaseID
+	promptNum  int
+	promptHash string
+	filesHash  string
+}
 
 // SecurityGate checks permission before executing an action.
 type SecurityGate interface {
@@ -92,6 +115,14 @@ type Orchestrator struct {
 	readyTimeout     time.Duration
 	lastNoAvailLogAt time.Time
 
+	// Dispatch stability tracking prevents tight re-dispatch loops when an
+	// agent repeatedly receives the same prompt without advancing progress.
+	lastDispatchFingerprint map[types.AgentID]dispatchFingerprint
+	repeatDispatchCount     map[types.AgentID]int
+	promptFailCount         map[promptKey]int
+	promptCooldownUntil     map[promptKey]time.Time
+	promptCooldownLogAt     map[promptKey]time.Time
+
 	// session holds the active session context.
 	session *session.SessionContext
 }
@@ -140,31 +171,36 @@ func New(
 	}
 
 	o := &Orchestrator{
-		cfg:              cfg,
-		worldState:       ws,
-		assigner:         assigner,
-		rag:              NewDecisionRAG(j, logger),
-		conflicts:        conflicts,
-		registry:         registry,
-		engine:           engine,
-		completion:       completion,
-		contextBld:       contextBld,
-		tracker:          tracker,
-		watcher:          watcher,
-		messenger:        messenger,
-		sessionMgr:       sessionMgr,
-		workNotes:        workNotes,
-		journal:          j,
-		logger:           logger,
-		pollInterval:     defaultPollInterval,
-		paneContent:      make(map[types.AgentID]string),
-		firstContentAt:   make(map[types.AgentID]time.Time),
-		agentReady:       make(map[types.AgentID]bool),
-		fallbackReadyLog: make(map[types.AgentID]bool),
-		prevStatus:       make(map[types.AgentID]types.AgentStatus),
-		lastDispatchTime: make(map[types.AgentID]time.Time),
-		dispatchGrace:    5 * time.Second,
-		readyTimeout:     readyTimeout,
+		cfg:                     cfg,
+		worldState:              ws,
+		assigner:                assigner,
+		rag:                     NewDecisionRAG(j, logger),
+		conflicts:               conflicts,
+		registry:                registry,
+		engine:                  engine,
+		completion:              completion,
+		contextBld:              contextBld,
+		tracker:                 tracker,
+		watcher:                 watcher,
+		messenger:               messenger,
+		sessionMgr:              sessionMgr,
+		workNotes:               workNotes,
+		journal:                 j,
+		logger:                  logger,
+		pollInterval:            defaultPollInterval,
+		paneContent:             make(map[types.AgentID]string),
+		firstContentAt:          make(map[types.AgentID]time.Time),
+		agentReady:              make(map[types.AgentID]bool),
+		fallbackReadyLog:        make(map[types.AgentID]bool),
+		prevStatus:              make(map[types.AgentID]types.AgentStatus),
+		lastDispatchTime:        make(map[types.AgentID]time.Time),
+		dispatchGrace:           5 * time.Second,
+		readyTimeout:            readyTimeout,
+		lastDispatchFingerprint: make(map[types.AgentID]dispatchFingerprint),
+		repeatDispatchCount:     make(map[types.AgentID]int),
+		promptFailCount:         make(map[promptKey]int),
+		promptCooldownUntil:     make(map[promptKey]time.Time),
+		promptCooldownLogAt:     make(map[promptKey]time.Time),
 	}
 	assigner.SetReadyGate(o.isAgentReadyForDispatch)
 	return o
@@ -349,19 +385,32 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 		}
 	}
 
-	// Check for file conflicts before assigning.
+	// Check for prompt cooldown and file conflicts before assigning.
 	assignmentAllowed := true
+	promptCoolingDown := false
 	if nextPrompt := o.engine.CurrentPrompt(); nextPrompt != nil {
 		if spec := o.engine.CurrentPhase(); spec != nil {
+			key := makePromptKey(spec.ID, nextPrompt.PromptNumber)
+			if until, cooling := o.promptCooldown(key); cooling {
+				promptCoolingDown = true
+				o.logPromptCooldown(key, until)
+			}
+
+			if promptCoolingDown {
+				assignmentAllowed = false
+			}
+
 			// Check against all active phases from busy agents.
-			for _, inst := range agents {
-				if inst.Agent.Status == types.StatusBusy {
-					agentState, ok := o.worldState.GetAgent(inst.Agent.ID)
-					if ok && agentState.PhaseID != "" && agentState.PhaseID != spec.ID {
-						if err := o.conflicts.CheckBeforeAssign(agentState.PhaseID, spec.ID); err != nil {
-							o.logger.Warn("skipping assignment due to conflict", "error", err)
-							assignmentAllowed = false
-							break
+			if assignmentAllowed {
+				for _, inst := range agents {
+					if inst.Agent.Status == types.StatusBusy {
+						agentState, ok := o.worldState.GetAgent(inst.Agent.ID)
+						if ok && agentState.PhaseID != "" && agentState.PhaseID != spec.ID {
+							if err := o.conflicts.CheckBeforeAssign(agentState.PhaseID, spec.ID); err != nil {
+								o.logger.Warn("skipping assignment due to conflict", "error", err)
+								assignmentAllowed = false
+								break
+							}
 						}
 					}
 				}
@@ -378,7 +427,9 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 			o.logNoAvailableAgents(agents)
 		} else if err == nil && agentID != "" {
 			if dispErr := o.dispatchPrompt(ctx, agentID); dispErr != nil {
-				o.logger.Warn("dispatch error", "agent_id", agentID, "error", dispErr)
+				if !errors.Is(dispErr, errDispatchCoolingDown) {
+					o.logger.Warn("dispatch error", "agent_id", agentID, "error", dispErr)
+				}
 			} else {
 				// Track the assignment for conflict detection.
 				if spec := o.engine.CurrentPhase(); spec != nil {
@@ -390,6 +441,8 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 				}
 			}
 		}
+	} else if promptCoolingDown {
+		// Prompt backoff is active; skip assignment until cooldown expires.
 	}
 
 	// Periodically save session.
@@ -510,12 +563,6 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 	// Untrack from conflict detection.
 	o.conflicts.UntrackAssignment(id)
 
-	output, err := inst.Plugin.ParseOutput(content)
-	if err != nil {
-		o.logger.Warn("failed to parse agent output", "agent_id", id, "error", err)
-		return
-	}
-
 	spec := o.engine.CurrentPhase()
 	if spec == nil {
 		return
@@ -526,6 +573,13 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 		return
 	}
 
+	output, err := inst.Plugin.ParseOutput(content)
+	if err != nil {
+		o.logger.Warn("failed to parse agent output", "agent_id", id, "error", err)
+		o.notePromptFailure(spec.ID, prompt.PromptNumber, "parse output failed")
+		return
+	}
+
 	// Gate verification commands and file writes before running completion.
 	if o.security != nil {
 		for _, gate := range spec.ExitCriteria {
@@ -533,6 +587,7 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 				if err := o.security.Gate(id, inst.Agent.Permission, "shell_exec", gate.Command, spec.ID, prompt.PromptNumber); err != nil {
 					o.logger.Warn("security gate denied verification command",
 						"agent_id", id, "command", gate.Command, "error", err)
+					o.notePromptFailure(spec.ID, prompt.PromptNumber, "security denied verification command")
 					return
 				}
 			}
@@ -541,6 +596,7 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 			if err := o.security.Gate(id, inst.Agent.Permission, "file_write", f, spec.ID, prompt.PromptNumber); err != nil {
 				o.logger.Warn("security gate denied file write",
 					"agent_id", id, "file", f, "error", err)
+				o.notePromptFailure(spec.ID, prompt.PromptNumber, "security denied file write")
 				return
 			}
 		}
@@ -549,6 +605,7 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 	result, err := o.completion.HandleCompletion(ctx, spec.ID, prompt.PromptNumber, output)
 	if err != nil {
 		o.logger.Error("completion handling failed", "agent_id", id, "error", err)
+		o.notePromptFailure(spec.ID, prompt.PromptNumber, "completion handling failed")
 		return
 	}
 
@@ -558,6 +615,8 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 			"phase", spec.ID,
 			"prompt", prompt.PromptNumber,
 		)
+		o.clearPromptFailure(spec.ID, prompt.PromptNumber)
+		o.clearDispatchTracking(id)
 		// Update world state with new phase if changed.
 		if newSpec := o.engine.CurrentPhase(); newSpec != nil {
 			o.worldState.UpdatePhase(newSpec.ID, newSpec.Name)
@@ -570,6 +629,7 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 			"phase", spec.ID,
 			"prompt", prompt.PromptNumber,
 		)
+		o.notePromptFailure(spec.ID, prompt.PromptNumber, "verification gates failed")
 	}
 }
 
@@ -708,6 +768,12 @@ func (o *Orchestrator) dispatchPrompt(ctx context.Context, agentID types.AgentID
 		o.revertAssignment(agentID, fmt.Errorf("no current phase"))
 		return fmt.Errorf("dispatch prompt: no current phase")
 	}
+	key := makePromptKey(spec.ID, prompt.PromptNumber)
+	if until, cooling := o.promptCooldown(key); cooling {
+		o.logPromptCooldown(key, until)
+		o.revertAssignment(agentID, errDispatchCoolingDown)
+		return fmt.Errorf("dispatch prompt: %w", errDispatchCoolingDown)
+	}
 
 	inst, err := o.registry.Get(agentID)
 	if err != nil {
@@ -725,6 +791,14 @@ func (o *Orchestrator) dispatchPrompt(ctx context.Context, agentID types.AgentID
 	if err != nil {
 		o.revertAssignment(agentID, err)
 		return fmt.Errorf("dispatch prompt: render: %w", err)
+	}
+	fp := buildDispatchFingerprint(spec, prompt, rendered)
+	repeat := o.bumpDispatchRepeat(agentID, fp)
+	if repeat > dispatchRepeatThreshold {
+		o.notePromptFailure(spec.ID, prompt.PromptNumber,
+			fmt.Sprintf("repeated identical dispatch x%d", repeat))
+		o.revertAssignment(agentID, errDispatchCoolingDown)
+		return fmt.Errorf("dispatch prompt: %w", errDispatchCoolingDown)
 	}
 
 	msg := types.Message{
@@ -939,6 +1013,145 @@ func (o *Orchestrator) logFallbackReadiness(id types.AgentID) {
 	o.logger.Info("agent dispatch-ready via startup timeout fallback",
 		"agent_id", id,
 		"waited", time.Since(firstSeen).Round(time.Second),
+	)
+}
+
+func makePromptKey(phaseID types.PhaseID, promptNum int) promptKey {
+	return promptKey{phaseID: phaseID, promptNum: promptNum}
+}
+
+func hashString(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+func hashStrings(ss []string) string {
+	cp := append([]string(nil), ss...)
+	sort.Strings(cp)
+	return hashString(strings.Join(cp, "\n"))
+}
+
+func buildDispatchFingerprint(spec *phase.PhaseSpec, prompt *phase.PromptContract, rendered string) dispatchFingerprint {
+	files := append([]string(nil), spec.FilesNew...)
+	files = append(files, spec.FilesModified...)
+	return dispatchFingerprint{
+		phaseID:    spec.ID,
+		promptNum:  prompt.PromptNumber,
+		promptHash: hashString(rendered),
+		filesHash:  hashStrings(files),
+	}
+}
+
+func (o *Orchestrator) ensureDispatchMaps() {
+	if o.lastDispatchFingerprint == nil {
+		o.lastDispatchFingerprint = make(map[types.AgentID]dispatchFingerprint)
+	}
+	if o.repeatDispatchCount == nil {
+		o.repeatDispatchCount = make(map[types.AgentID]int)
+	}
+	if o.promptFailCount == nil {
+		o.promptFailCount = make(map[promptKey]int)
+	}
+	if o.promptCooldownUntil == nil {
+		o.promptCooldownUntil = make(map[promptKey]time.Time)
+	}
+	if o.promptCooldownLogAt == nil {
+		o.promptCooldownLogAt = make(map[promptKey]time.Time)
+	}
+}
+
+func (o *Orchestrator) clearDispatchTracking(agentID types.AgentID) {
+	o.ensureDispatchMaps()
+	delete(o.lastDispatchFingerprint, agentID)
+	delete(o.repeatDispatchCount, agentID)
+}
+
+func (o *Orchestrator) bumpDispatchRepeat(agentID types.AgentID, fp dispatchFingerprint) int {
+	o.ensureDispatchMaps()
+	prev, ok := o.lastDispatchFingerprint[agentID]
+	if ok && prev == fp {
+		o.repeatDispatchCount[agentID]++
+	} else {
+		o.lastDispatchFingerprint[agentID] = fp
+		o.repeatDispatchCount[agentID] = 1
+	}
+	return o.repeatDispatchCount[agentID]
+}
+
+func (o *Orchestrator) promptCooldown(key promptKey) (time.Time, bool) {
+	o.ensureDispatchMaps()
+	until, ok := o.promptCooldownUntil[key]
+	if !ok {
+		return time.Time{}, false
+	}
+	if time.Now().After(until) {
+		delete(o.promptCooldownUntil, key)
+		delete(o.promptCooldownLogAt, key)
+		return time.Time{}, false
+	}
+	return until, true
+}
+
+func (o *Orchestrator) cooldownDuration(failureCount int) time.Duration {
+	retries := failureCount - dispatchFailureThreshold + 1
+	if retries < 1 {
+		retries = 1
+	}
+	backoff := dispatchBackoffBase
+	for i := 1; i < retries; i++ {
+		backoff *= 2
+		if backoff >= dispatchBackoffMax {
+			return dispatchBackoffMax
+		}
+	}
+	return backoff
+}
+
+func (o *Orchestrator) notePromptFailure(phaseID types.PhaseID, promptNum int, reason string) {
+	o.ensureDispatchMaps()
+	key := makePromptKey(phaseID, promptNum)
+	o.promptFailCount[key]++
+	count := o.promptFailCount[key]
+	if count < dispatchFailureThreshold {
+		return
+	}
+
+	until := time.Now().Add(o.cooldownDuration(count))
+	if current, ok := o.promptCooldownUntil[key]; ok && current.After(until) {
+		until = current
+	}
+	o.promptCooldownUntil[key] = until
+	delete(o.promptCooldownLogAt, key)
+
+	o.logger.Warn("prompt dispatch backoff activated",
+		"phase", phaseID,
+		"prompt", promptNum,
+		"failures", count,
+		"cooldown", until.Sub(time.Now()).Round(time.Second),
+		"reason", reason,
+	)
+}
+
+func (o *Orchestrator) clearPromptFailure(phaseID types.PhaseID, promptNum int) {
+	o.ensureDispatchMaps()
+	key := makePromptKey(phaseID, promptNum)
+	delete(o.promptFailCount, key)
+	delete(o.promptCooldownUntil, key)
+	delete(o.promptCooldownLogAt, key)
+}
+
+func (o *Orchestrator) logPromptCooldown(key promptKey, until time.Time) {
+	o.ensureDispatchMaps()
+	now := time.Now()
+	if last, ok := o.promptCooldownLogAt[key]; ok && now.Sub(last) < cooldownLogInterval {
+		return
+	}
+	o.promptCooldownLogAt[key] = now
+	o.logger.Info("assignment backoff active",
+		"phase", key.phaseID,
+		"prompt", key.promptNum,
+		"cooldown_remaining", until.Sub(now).Round(time.Second),
+		"failures", o.promptFailCount[key],
 	)
 }
 

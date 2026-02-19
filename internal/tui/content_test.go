@@ -452,3 +452,11 @@ func TestWrapLine_ANSIWidthSafe(t *testing.T) {
 		t.Fatalf("wrapped strip join = %q, want %q", plain.String(), "ABCDEFGHIJK")
 	}
 }
+
+func TestSanitizePaneLine(t *testing.T) {
+	input := "hello\tworld \r\x07\x08  "
+	got := sanitizePaneLine(input)
+	if got != "hello\tworld" {
+		t.Fatalf("sanitizePaneLine() = %q, want %q", got, "hello\tworld")
+	}
+}

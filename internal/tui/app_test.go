@@ -583,3 +583,24 @@ func TestModel_SidebarWidth_UsesCurrentDimensionsForCompact(t *testing.T) {
 		t.Fatalf("sidebarWidth() = %d, want 27", got)
 	}
 }
+
+func TestModel_RenderPanel_ClampsOverflowHeight(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	body := strings.Repeat("line\n", 80)
+	rendered := m.renderPanel("Workspace", "output", body, 30, 6, true)
+	lines := strings.Split(rendered, "\n")
+	if got, want := len(lines), 8; got != want { // inner 6 + top/bottom border
+		t.Fatalf("rendered panel line count = %d, want %d", got, want)
+	}
+}
+
+func TestClampPanelContent_HeightBounded(t *testing.T) {
+	content := clampPanelContent("header", "123456789\n2\n3\n4\n5", 6, 3)
+	lines := strings.Split(content, "\n")
+	if got, want := len(lines), 3; got != want {
+		t.Fatalf("line count = %d, want %d", got, want)
+	}
+	if lines[0] == "" {
+		t.Fatal("header line should not be empty")
+	}
+}

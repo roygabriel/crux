@@ -57,16 +57,12 @@ func (g *GateRunner) Run(ctx context.Context, gate Gate) (*GateResult, error) {
 		return nil, fmt.Errorf("gate has empty command: %w", types.ErrGateFailed)
 	}
 
-	argv := strings.Fields(gate.Command)
-	if len(argv) == 0 {
-		return nil, fmt.Errorf("gate command parsed to empty argv: %w", types.ErrGateFailed)
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, g.timeout)
 	defer cancel()
 
 	start := time.Now()
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// Run through bash so prompt specs can use pipelines and shell operators.
+	cmd := exec.CommandContext(ctx, "bash", "-o", "pipefail", "-lc", gate.Command)
 	cmd.Dir = g.workDir
 
 	out, err := cmd.CombinedOutput()

@@ -248,9 +248,27 @@ func flushCodeBlock(current *PromptContract, sub string, lang string, lines []st
 	case promptSubInterfaceContract:
 		current.InterfaceContract = content
 	case promptSubVerification:
+		var pendingComment string
 		for _, l := range lines {
 			cmd := strings.TrimSpace(l)
 			if cmd == "" {
+				pendingComment = ""
+				continue
+			}
+			if strings.HasPrefix(cmd, "#") {
+				pendingComment = strings.TrimSpace(strings.TrimPrefix(cmd, "#"))
+				continue
+			}
+			if shouldTreatManualVerification(cmd, pendingComment) {
+				expected := pendingComment
+				if expected == "" {
+					expected = "manual verification required"
+				}
+				current.Verification = append(current.Verification, Gate{
+					Expected: expected,
+					Type:     GateHumanApproval,
+				})
+				pendingComment = ""
 				continue
 			}
 			current.Verification = append(current.Verification, Gate{
@@ -258,8 +276,35 @@ func flushCodeBlock(current *PromptContract, sub string, lang string, lines []st
 				Expected: "exit 0",
 				Type:     GateAutomated,
 			})
+			pendingComment = ""
 		}
 	}
+}
+
+func shouldTreatManualVerification(command, comment string) bool {
+	if comment == "" {
+		return false
+	}
+	manualHints := []string{
+		"manual",
+		"press",
+		"ctrl+c",
+		"visually",
+		"interactive",
+		"terminal should",
+	}
+	lower := strings.ToLower(comment)
+	for _, hint := range manualHints {
+		if strings.Contains(lower, hint) {
+			return true
+		}
+	}
+	// Heuristic: local binary invocations are commonly interactive in this workflow.
+	if strings.HasPrefix(strings.TrimSpace(command), "./") &&
+		(strings.Contains(lower, "terminal") || strings.Contains(lower, "screen")) {
+		return true
+	}
+	return false
 }
 
 func parseRequiredReadingLine(line string, pc *PromptContract) {

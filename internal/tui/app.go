@@ -2,10 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/roygabriel/crux/internal/ui/chrome"
 )
 
@@ -473,8 +475,53 @@ func (m Model) renderPanel(title, meta, body string, innerW, innerH int, focused
 	if meta != "" {
 		header += " " + m.theme.PanelMeta.Render("["+meta+"]")
 	}
-	content := header + "\n" + body
+	content := clampPanelContent(header, body, innerW, innerH)
 	return m.theme.PanelStyle(focused).Width(innerW).Height(innerH).Render(content)
+}
+
+func clampPanelContent(header, body string, width, height int) string {
+	if height <= 0 {
+		return ""
+	}
+
+	header = ansi.TruncateWc(header, width, "")
+	if height == 1 {
+		return header
+	}
+
+	bodyLines := strings.Split(body, "\n")
+	if len(bodyLines) == 0 {
+		bodyLines = []string{""}
+	}
+
+	maxBodyLines := height - 1
+	if len(bodyLines) > maxBodyLines {
+		bodyLines = bodyLines[:maxBodyLines]
+		if maxBodyLines > 0 {
+			last := ansi.TruncateWc(bodyLines[maxBodyLines-1], width, "")
+			marker := "..."
+			if width < 3 {
+				marker = strings.Repeat(".", width)
+			}
+			if marker != "" {
+				remain := max(width-ansi.StringWidthWc(marker), 0)
+				last = ansi.TruncateWc(last, remain, "") + marker
+			}
+			bodyLines[maxBodyLines-1] = last
+		}
+	}
+
+	for i := range bodyLines {
+		bodyLines[i] = ansi.TruncateWc(bodyLines[i], width, "")
+	}
+
+	lines := make([]string, 0, height)
+	lines = append(lines, header)
+	lines = append(lines, bodyLines...)
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines[:height], "\n")
 }
 
 // agentSummary returns a compact string like "3 agents: 1 busy, 1 idle, 1 rate-limited".

@@ -227,3 +227,49 @@ Do second.
 		t.Fatalf("phase IDs = (%q,%q), want (\"9B\",\"9B\")", prompts[0].PhaseID, prompts[1].PhaseID)
 	}
 }
+
+func TestParsePromptDoc_VerificationSkipsCommentsAndMarksManual(t *testing.T) {
+	t.Parallel()
+
+	content := `# PHASE 1A PROMPTS: Example
+
+## Prompt 1: Verify
+### Task
+Do it.
+### Verification
+` + "```bash\n" + `
+# Build check
+go build ./...
+# Manual verification: press Ctrl+C after launch
+./space-invaders
+` + "```" + `
+`
+
+	path := filepath.Join(t.TempDir(), "PHASE1A-PROMPT.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write prompt doc: %v", err)
+	}
+
+	prompts, err := phase.ParsePromptDoc(path)
+	if err != nil {
+		t.Fatalf("ParsePromptDoc: %v", err)
+	}
+	if len(prompts) != 1 {
+		t.Fatalf("len(prompts) = %d, want 1", len(prompts))
+	}
+	if len(prompts[0].Verification) != 2 {
+		t.Fatalf("len(verification) = %d, want 2", len(prompts[0].Verification))
+	}
+	if prompts[0].Verification[0].Type != phase.GateAutomated {
+		t.Fatalf("verification[0].Type = %q, want automated", prompts[0].Verification[0].Type)
+	}
+	if prompts[0].Verification[0].Command != "go build ./..." {
+		t.Fatalf("verification[0].Command = %q, want %q", prompts[0].Verification[0].Command, "go build ./...")
+	}
+	if prompts[0].Verification[1].Type != phase.GateHumanApproval {
+		t.Fatalf("verification[1].Type = %q, want human-approval", prompts[0].Verification[1].Type)
+	}
+	if prompts[0].Verification[1].Command != "" {
+		t.Fatalf("verification[1].Command = %q, want empty", prompts[0].Verification[1].Command)
+	}
+}

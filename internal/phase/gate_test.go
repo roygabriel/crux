@@ -163,3 +163,20 @@ func TestGateRunner_Duration(t *testing.T) {
 		t.Error("expected positive duration")
 	}
 }
+
+func TestGateRunner_ShellOperators(t *testing.T) {
+	runner := newTestRunner(t)
+	gate := phase.Gate{
+		Command:  `echo "alpha" | grep -q alpha && echo ok`,
+		Expected: "ok",
+		Type:     phase.GateAutomated,
+	}
+
+	result, err := runner.Run(context.Background(), gate)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !result.Passed {
+		t.Fatalf("expected gate to pass, output=%q err=%v", result.Output, result.Error)
+	}
+}

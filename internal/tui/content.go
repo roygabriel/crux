@@ -316,7 +316,11 @@ func (p *ContentPanel) outputLines() []string {
 	if p.agent.PaneContent == "" {
 		return []string{"Waiting for output..."}
 	}
-	return strings.Split(p.agent.PaneContent, "\n")
+	lines := strings.Split(p.agent.PaneContent, "\n")
+	for i := range lines {
+		lines[i] = sanitizePaneLine(lines[i])
+	}
+	return lines
 }
 
 func (p *ContentPanel) detailLines() []string {
@@ -410,4 +414,20 @@ func wrapLine(line string, width int) []string {
 		return []string{""}
 	}
 	return parts
+}
+
+func sanitizePaneLine(line string) string {
+	line = strings.ReplaceAll(line, "\r", "")
+	line = strings.TrimRight(line, " \t")
+	if line == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range line {
+		// Keep printable runes and tabs. Drop control chars that can corrupt TUI rendering.
+		if r == '\t' || r >= 0x20 {
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimRight(b.String(), " \t")
 }

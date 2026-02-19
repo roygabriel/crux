@@ -255,3 +255,107 @@ func TestNewDecisionRAG_NilJournal(t *testing.T) {
 	// journal.Journal satisfies JournalSearcher, but we test with nil.
 	_ = journal.NewJournal(nil, nil)
 }
+
+// --- mockIdlePlugin always reports agent as ready/idle ---
+
+type mockIdlePlugin struct {
+	mockPlugin
+}
+
+func (m *mockIdlePlugin) DetectReady(_ string) bool { return true }
+
+func TestOrchestrator_DispatchGracePeriod(t *testing.T) {
+	dir := setupTestDir(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	cmd := &fakeCommander{}
+	sm := tmux.NewSessionManager(cmd, logger)
+	pm := tmux.NewPaneManager(cmd, logger)
+
+	// Plugin registry with a mock plugin that always reports idle.
+	pluginReg := plugin.NewRegistry()
+	_ = pluginReg.Register("claude", func() plugin.AgentPlugin {
+		return &mockIdlePlugin{
+			mockPlugin: mockPlugin{
+				name: "claude",
+				caps: []plugin.Capability{plugin.CapCodeGen, plugin.CapShellExec},
+			},
+		}
+	})
+
+	registry := agent.NewRegistry(sm, pm, pluginReg, logger)
+	watcher := tmux.NewWatcher(pm, 100*time.Millisecond, logger)
+
+	specDir := filepath.Join(dir, "phases")
+	gateRunner := phase.NewGateRunner(dir, 10*time.Second, logger)
+	engine, err := phase.NewEngine(specDir, gateRunner, nil, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	completion := phase.NewCompletionHandler(engine, gateRunner, &noopDecisionRecorder{}, &noopWorkNotes{}, logger)
+	contextBld := phase.NewContextBuilder(&noopDecisionSearcher{}, &noopWorkNotes{}, &noopBankSummarizer{}, logger)
+	tracker := phase.NewTracker(engine, logger)
+	sessionMgr := session.NewManager(filepath.Join(dir, "sessions"), nil, logger)
+	notesMgr := worknotes.NewManager(filepath.Join(dir, "notes"), logger)
+	messenger := agent.NewMessenger(pm, registry, logger)
+
+	cfg := &config.Config{
+		Project: config.ProjectConfig{Name: "test", Root: dir, StateDir: dir},
+		Agents: map[string]config.AgentConfig{
+			"claude-1": {Plugin: "claude", Role: "engineer", Permission: "standard"},
+		},
+	}
+
+	orch := orchestrator.New(cfg, registry, engine, completion, contextBld, tracker,
+		watcher, messenger, sessionMgr, notesMgr, nil, logger)
+
+	// Spawn the agent directly so it's in the registry.
+	a := types.Agent{
+		ID:         "claude-1",
+		Name:       "claude-1",
+		Plugin:     "claude",
+		Role:       "engineer",
+		Permission: "standard",
+		SessionID:  "test",
+	}
+	if err := registry.Spawn(context.Background(), a); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mark the agent as Busy in the registry (simulate post-assignment state).
+	if err := registry.UpdateStatus("claude-1", types.StatusBusy); err != nil {
+		t.Fatal(err)
+	}
+
+	// Also mark Busy in world state (as AssignNext would do).
+	orch.WorldState().UpdateAgent("claude-1", orchestrator.AgentState{
+		Status:     types.StatusBusy,
+		LastActive: time.Now().UTC(),
+	})
+
+	// Simulate a recent dispatch: set lastDispatchTime to now, prevStatus to Busy.
+	orch.SetTestDispatchState("claude-1", time.Now())
+
+	// Set a long grace period so it definitely covers this test.
+	orch.SetDispatchGrace(10 * time.Second)
+
+	// Inject pane content — the idle plugin will detect this as "ready" (idle).
+	orch.SetTestPaneContent("claude-1", "$ ")
+
+	// Run a tick — the plugin sees the agent as idle, but the grace period should
+	// suppress the Busy→Idle transition.
+	if err := orch.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick() error = %v", err)
+	}
+
+	// The agent should still be Busy in the world state.
+	ws := orch.WorldState()
+	agentState, ok := ws.GetAgent("claude-1")
+	if !ok {
+		t.Fatal("agent not found in world state after tick")
+	}
+	if agentState.Status != types.StatusBusy {
+		t.Errorf("agent status = %q after grace period tick, want %q", agentState.Status, types.StatusBusy)
+	}
+}

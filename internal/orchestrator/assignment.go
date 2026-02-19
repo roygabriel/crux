@@ -51,29 +51,29 @@ func NewAssigner(agents AgentLister, prompts PromptProvider, worldState *WorldSt
 }
 
 // AssignNext finds the next pending prompt and assigns it to an idle agent.
-// Returns nil if there is no prompt to assign. Returns ErrNoAvailableAgent
-// if a prompt exists but no agent is idle.
-func (a *Assigner) AssignNext(ctx context.Context) error {
+// Returns ("", nil) if there is no prompt to assign. Returns ("", ErrNoAvailableAgent)
+// if a prompt exists but no agent is idle. On success returns the assigned agent's ID.
+func (a *Assigner) AssignNext(ctx context.Context) (types.AgentID, error) {
 	prompt := a.prompts.CurrentPrompt()
 	if prompt == nil {
-		return nil
+		return "", nil
 	}
 
 	spec := a.prompts.CurrentPhase()
 	if spec == nil {
-		return nil
+		return "", nil
 	}
 
 	idle := a.idleAgents()
 	if len(idle) == 0 {
-		return ErrNoAvailableAgent
+		return "", ErrNoAvailableAgent
 	}
 
 	// Pick the best agent: prefer capability match, fall back to first idle.
 	selected := a.selectAgent(idle, prompt)
 
 	if err := a.agents.UpdateStatus(selected.Agent.ID, types.StatusBusy); err != nil {
-		return fmt.Errorf("assign next: update status: %w", err)
+		return "", fmt.Errorf("assign next: update status: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -91,7 +91,7 @@ func (a *Assigner) AssignNext(ctx context.Context) error {
 		"phase", spec.ID,
 		"prompt", prompt.PromptNumber,
 	)
-	return nil
+	return selected.Agent.ID, nil
 }
 
 // AssignToAgent explicitly assigns a specific prompt to a named agent.

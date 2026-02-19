@@ -111,9 +111,12 @@ func TestAssignNext_IdleAgent(t *testing.T) {
 	ws := orchestrator.NewWorldState("sess-1")
 	assigner := orchestrator.NewAssigner(lister, provider, ws, nil)
 
-	err := assigner.AssignNext(context.Background())
+	agentID, err := assigner.AssignNext(context.Background())
 	if err != nil {
 		t.Fatalf("AssignNext() error = %v", err)
+	}
+	if agentID != "claude-1" {
+		t.Errorf("AssignNext() agentID = %q, want %q", agentID, "claude-1")
 	}
 	if !lister.updateCalled {
 		t.Fatal("expected UpdateStatus to be called")
@@ -143,9 +146,12 @@ func TestAssignNext_SkipsBusy(t *testing.T) {
 	ws := orchestrator.NewWorldState("sess-1")
 	assigner := orchestrator.NewAssigner(lister, provider, ws, nil)
 
-	err := assigner.AssignNext(context.Background())
+	agentID, err := assigner.AssignNext(context.Background())
 	if err != nil {
 		t.Fatalf("AssignNext() error = %v", err)
+	}
+	if agentID != "codex-1" {
+		t.Errorf("AssignNext() agentID = %q, want %q", agentID, "codex-1")
 	}
 	if lister.updateID != "codex-1" {
 		t.Errorf("should have assigned idle agent codex-1, got %q", lister.updateID)
@@ -162,9 +168,12 @@ func TestAssignNext_NoIdle(t *testing.T) {
 	ws := orchestrator.NewWorldState("sess-1")
 	assigner := orchestrator.NewAssigner(lister, provider, ws, nil)
 
-	err := assigner.AssignNext(context.Background())
+	agentID, err := assigner.AssignNext(context.Background())
 	if !errors.Is(err, orchestrator.ErrNoAvailableAgent) {
 		t.Errorf("AssignNext() error = %v, want ErrNoAvailableAgent", err)
+	}
+	if agentID != "" {
+		t.Errorf("AssignNext() agentID = %q, want empty", agentID)
 	}
 }
 
@@ -175,9 +184,12 @@ func TestAssignNext_NoPrompt(t *testing.T) {
 	ws := orchestrator.NewWorldState("sess-1")
 	assigner := orchestrator.NewAssigner(lister, provider, ws, nil)
 
-	err := assigner.AssignNext(context.Background())
+	agentID, err := assigner.AssignNext(context.Background())
 	if err != nil {
 		t.Fatalf("AssignNext() should return nil when no prompt, got %v", err)
+	}
+	if agentID != "" {
+		t.Errorf("AssignNext() agentID = %q, want empty", agentID)
 	}
 	if lister.updateCalled {
 		t.Error("UpdateStatus should not be called when no prompt")

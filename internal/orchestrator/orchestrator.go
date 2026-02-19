@@ -78,6 +78,11 @@ type Orchestrator struct {
 	// prevStatus tracks previous agent status for transition detection.
 	prevStatus map[types.AgentID]types.AgentStatus
 
+	// lastDispatchTime records when a prompt was last dispatched to each agent.
+	// Used to suppress premature Busy→Idle transitions during the grace period.
+	lastDispatchTime map[types.AgentID]time.Time
+	dispatchGrace    time.Duration
+
 	// session holds the active session context.
 	session *session.SessionContext
 }
@@ -135,8 +140,10 @@ func New(
 		journal:      j,
 		logger:       logger,
 		pollInterval: defaultPollInterval,
-		paneContent:  make(map[types.AgentID]string),
-		prevStatus:   make(map[types.AgentID]types.AgentStatus),
+		paneContent:      make(map[types.AgentID]string),
+		prevStatus:       make(map[types.AgentID]types.AgentStatus),
+		lastDispatchTime: make(map[types.AgentID]time.Time),
+		dispatchGrace:    5 * time.Second,
 	}
 }
 
@@ -304,6 +311,12 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 		prev := o.prevStatus[id]
 
 		if newStatus != prev {
+			// Suppress premature Busy→Idle transitions within the dispatch grace period.
+			if prev == types.StatusBusy && newStatus == types.StatusIdle {
+				if dt, ok := o.lastDispatchTime[id]; ok && time.Since(dt) < o.dispatchGrace {
+					continue
+				}
+			}
 			o.handleTransition(ctx, inst, prev, newStatus, content)
 			o.prevStatus[id] = newStatus
 		}
@@ -329,21 +342,21 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 		}
 	}
 
-	// Assign idle agents to pending prompts.
+	// Assign idle agents to pending prompts and dispatch the rendered prompt.
 	if assignmentAllowed {
-		if err := o.assigner.AssignNext(ctx); err != nil && err != ErrNoAvailableAgent {
+		agentID, err := o.assigner.AssignNext(ctx)
+		if err != nil && err != ErrNoAvailableAgent {
 			o.logger.Warn("assignment error", "error", err)
-		} else if err == nil {
-			// Track the assignment for conflict detection.
-			if spec := o.engine.CurrentPhase(); spec != nil {
-				// Find the agent that was just assigned (became busy).
-				for _, inst := range o.registry.List() {
-					if inst.Agent.Status == types.StatusBusy {
-						agentState, ok := o.worldState.GetAgent(inst.Agent.ID)
-						if ok && agentState.PhaseID == spec.ID {
-							files := append(spec.FilesNew, spec.FilesModified...)
-							o.conflicts.TrackAssignment(inst.Agent.ID, spec.ID, files)
-						}
+		} else if err == nil && agentID != "" {
+			if dispErr := o.dispatchPrompt(ctx, agentID); dispErr != nil {
+				o.logger.Warn("dispatch error", "agent_id", agentID, "error", dispErr)
+			} else {
+				// Track the assignment for conflict detection.
+				if spec := o.engine.CurrentPhase(); spec != nil {
+					agentState, ok := o.worldState.GetAgent(agentID)
+					if ok && agentState.PhaseID == spec.ID {
+						files := append(spec.FilesNew, spec.FilesModified...)
+						o.conflicts.TrackAssignment(agentID, spec.ID, files)
 					}
 				}
 			}
@@ -650,6 +663,80 @@ func (o *Orchestrator) logInstructionEvent(ctx context.Context, action, detail s
 		Action:    action,
 		Rationale: detail,
 	})
+}
+
+// dispatchPrompt renders the current prompt and sends it to the agent's tmux pane.
+// On failure it reverts the agent back to Idle.
+func (o *Orchestrator) dispatchPrompt(ctx context.Context, agentID types.AgentID) error {
+	prompt := o.engine.CurrentPrompt()
+	if prompt == nil {
+		o.revertAssignment(agentID, fmt.Errorf("no current prompt"))
+		return fmt.Errorf("dispatch prompt: no current prompt")
+	}
+
+	spec := o.engine.CurrentPhase()
+	if spec == nil {
+		o.revertAssignment(agentID, fmt.Errorf("no current phase"))
+		return fmt.Errorf("dispatch prompt: no current phase")
+	}
+
+	inst, err := o.registry.Get(agentID)
+	if err != nil {
+		o.revertAssignment(agentID, err)
+		return fmt.Errorf("dispatch prompt: get agent: %w", err)
+	}
+
+	promptData, err := o.contextBld.BuildForPrompt(ctx, *prompt, *spec, string(inst.Agent.Role), string(inst.Agent.Permission))
+	if err != nil {
+		o.revertAssignment(agentID, err)
+		return fmt.Errorf("dispatch prompt: build context: %w", err)
+	}
+
+	rendered, err := phase.RenderPrompt(promptData)
+	if err != nil {
+		o.revertAssignment(agentID, err)
+		return fmt.Errorf("dispatch prompt: render: %w", err)
+	}
+
+	msg := types.Message{
+		ID:        fmt.Sprintf("dispatch-%d", time.Now().UnixNano()),
+		From:      "orchestrator",
+		To:        agentID,
+		Type:      types.MessageTask,
+		Payload:   rendered,
+		Timestamp: time.Now().UTC(),
+	}
+
+	if err := o.messenger.Send(ctx, agentID, msg); err != nil {
+		o.revertAssignment(agentID, err)
+		return fmt.Errorf("dispatch prompt: send: %w", err)
+	}
+
+	o.lastDispatchTime[agentID] = time.Now()
+	o.prevStatus[agentID] = types.StatusBusy
+
+	o.logger.Info("dispatched prompt to agent",
+		"agent_id", agentID,
+		"phase", spec.ID,
+		"prompt", prompt.PromptNumber,
+	)
+	return nil
+}
+
+// revertAssignment rolls an agent back from Busy to Idle when prompt dispatch fails.
+func (o *Orchestrator) revertAssignment(agentID types.AgentID, cause error) {
+	o.logger.Warn("reverting assignment",
+		"agent_id", agentID,
+		"cause", cause,
+	)
+	if err := o.registry.UpdateStatus(agentID, types.StatusIdle); err != nil {
+		o.logger.Error("revert assignment: update registry", "agent_id", agentID, "error", err)
+	}
+	o.worldState.UpdateAgent(agentID, AgentState{
+		Status:     types.StatusIdle,
+		LastActive: time.Now().UTC(),
+	})
+	o.prevStatus[agentID] = types.StatusIdle
 }
 
 // spawnAgents creates tmux panes and launches agents per config.

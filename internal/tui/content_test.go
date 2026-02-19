@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/roygabriel/crux/pkg/types"
 )
 
@@ -430,5 +431,24 @@ func TestWrapLine(t *testing.T) {
 	}
 	if got[0] != "1234" || got[1] != "5678" || got[2] != "9" {
 		t.Fatalf("unexpected wrapped output: %#v", got)
+	}
+}
+
+func TestWrapLine_ANSIWidthSafe(t *testing.T) {
+	input := "\x1b[31mABCDEFGHIJK\x1b[0m"
+	got := wrapLine(input, 4)
+	if len(got) < 3 {
+		t.Fatalf("len = %d, want at least 3", len(got))
+	}
+
+	var plain strings.Builder
+	for i, seg := range got {
+		if w := ansi.StringWidthWc(seg); w > 4 {
+			t.Fatalf("segment %d width = %d, want <= 4", i, w)
+		}
+		plain.WriteString(ansi.Strip(seg))
+	}
+	if plain.String() != "ABCDEFGHIJK" {
+		t.Fatalf("wrapped strip join = %q, want %q", plain.String(), "ABCDEFGHIJK")
 	}
 }

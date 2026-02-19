@@ -573,3 +573,13 @@ func TestModel_SidebarWidth(t *testing.T) {
 		})
 	}
 }
+
+func TestModel_SidebarWidth_UsesCurrentDimensionsForCompact(t *testing.T) {
+	m := NewModel(NewStateBridge(1), nil, nil)
+	m.width = 90
+	m.height = 40
+	// Do not call recalcSizes; sidebarWidth should still use compact math.
+	if got := m.sidebarWidth(); got != 27 {
+		t.Fatalf("sidebarWidth() = %d, want 27", got)
+	}
+}

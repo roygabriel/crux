@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // LogLevel classifies the severity of a log entry.
@@ -337,9 +338,8 @@ func formatLogEntry(e LogEntry, width int) string {
 	line := fmt.Sprintf("%s %s %s%s", timeStr, levelStr, source, e.Message)
 
 	// Truncate to width if needed.
-	runes := []rune(line)
-	if width > 0 && len(runes) > width {
-		line = string(runes[:width])
+	if width > 0 && ansi.StringWidthWc(line) > width {
+		line = ansi.TruncateWc(line, width, "")
 	}
 
 	return line

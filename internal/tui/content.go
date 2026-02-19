@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/roygabriel/crux/pkg/types"
 )
 
@@ -400,21 +401,13 @@ func wrapLine(line string, width int) []string {
 	if width <= 0 {
 		return []string{line}
 	}
-	runes := []rune(line)
-	if len(runes) == 0 {
+	if line == "" {
 		return []string{""}
 	}
-	if len(runes) <= width {
-		return []string{line}
+	wrapped := ansi.HardwrapWc(line, width, true)
+	parts := strings.Split(wrapped, "\n")
+	if len(parts) == 0 {
+		return []string{""}
 	}
-
-	var out []string
-	for len(runes) > width {
-		out = append(out, string(runes[:width]))
-		runes = runes[width:]
-	}
-	if len(runes) > 0 {
-		out = append(out, string(runes))
-	}
-	return out
+	return parts
 }

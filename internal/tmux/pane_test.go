@@ -378,9 +378,12 @@ func TestPaneManagerSendKeys(t *testing.T) {
 				if args[len(args)-1] != "Enter" {
 					t.Errorf("expected last arg to be Enter, got %s", args[len(args)-1])
 				}
-				// Verify the text arg is present.
-				if args[3] != "echo hello" {
-					t.Errorf("expected text arg 'echo hello', got %s", args[3])
+				// Verify -- delimiter and text arg are present.
+				if args[3] != "--" {
+					t.Errorf("expected -- at args[3], got %s", args[3])
+				}
+				if args[4] != "echo hello" {
+					t.Errorf("expected text arg 'echo hello', got %s", args[4])
 				}
 				return "", nil
 			},
@@ -456,8 +459,11 @@ func TestPaneManagerSendKeysLiteral(t *testing.T) {
 				}
 				// First call has -l flag, second is Enter.
 				if len(args) > 1 && args[1] == "-l" {
-					if args[4] != "```go\nfmt.Println()\n```" {
-						t.Errorf("expected literal text, got %s", args[4])
+					if args[4] != "--" {
+						t.Errorf("expected -- delimiter, got %s", args[4])
+					}
+					if args[5] != "```go\nfmt.Println()\n```" {
+						t.Errorf("expected literal text, got %s", args[5])
 					}
 				}
 				return "", nil
@@ -469,8 +475,8 @@ func TestPaneManagerSendKeysLiteral(t *testing.T) {
 			text:   "go build ./...; go test ./...",
 			runFunc: func(_ context.Context, args ...string) (string, error) {
 				if len(args) > 1 && args[1] == "-l" {
-					if args[4] != "go build ./...; go test ./..." {
-						t.Errorf("expected literal text with semicolons, got %s", args[4])
+					if args[5] != "go build ./...; go test ./..." {
+						t.Errorf("expected literal text with semicolons, got %s", args[5])
 					}
 				}
 				return "", nil
@@ -488,6 +494,25 @@ func TestPaneManagerSendKeysLiteral(t *testing.T) {
 					}
 					if args[2] != "-t" {
 						t.Errorf("expected -t at args[2], got %s", args[2])
+					}
+					if args[4] != "--" {
+						t.Errorf("expected -- delimiter at args[4], got %s", args[4])
+					}
+				}
+				return "", nil
+			},
+		},
+		{
+			name:   "leading-dash-text-allowed",
+			paneID: "%0",
+			text:   "- bullet item",
+			runFunc: func(_ context.Context, args ...string) (string, error) {
+				if len(args) > 1 && args[1] == "-l" {
+					if args[4] != "--" {
+						t.Errorf("expected -- delimiter at args[4], got %s", args[4])
+					}
+					if args[5] != "- bullet item" {
+						t.Errorf("expected literal leading-dash text, got %s", args[5])
 					}
 				}
 				return "", nil

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestLogsPanel_CircularBufferEvicts(t *testing.T) {
@@ -385,5 +387,22 @@ func TestLogsPanel_SlashPreservesExistingFilter(t *testing.T) {
 	p.HandleKey("/")
 	if p.filterInput != "existing" {
 		t.Errorf("filterInput = %q, want %q", p.filterInput, "existing")
+	}
+}
+
+func TestFormatLogEntry_ANSITruncateWidthSafe(t *testing.T) {
+	entry := LogEntry{
+		Time:    time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC),
+		Level:   LogWarn,
+		Source:  "orch",
+		Message: strings.Repeat("x", 200),
+	}
+
+	line := formatLogEntry(entry, 24)
+	if w := ansi.StringWidthWc(line); w != 24 {
+		t.Fatalf("visible width = %d, want 24", w)
+	}
+	if strings.Contains(line, "\n") {
+		t.Fatalf("line should be single-line, got %q", line)
 	}
 }

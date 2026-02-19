@@ -23,6 +23,8 @@ const (
 	ActionGitPush ActionType = "git_push"
 	// ActionGitCommit is a git commit operation.
 	ActionGitCommit ActionType = "git_commit"
+	// ActionMessageSend is an internal orchestrator-to-agent message dispatch.
+	ActionMessageSend ActionType = "message_send"
 )
 
 // PermissionResult captures the outcome of a permission check.
@@ -73,10 +75,20 @@ func (e *Enforcer) Check(perm types.Permission, action ActionType, target string
 		return e.checkGitPush(perm, target, result)
 	case ActionGitCommit:
 		return e.checkGitCommit(perm, result)
+	case ActionMessageSend:
+		return e.checkMessageSend(result)
 	default:
 		result.Reason = "unknown action type"
 		return result
 	}
+}
+
+func (e *Enforcer) checkMessageSend(result PermissionResult) PermissionResult {
+	// Messaging is an internal control-plane action (not filesystem/shell/network).
+	// It must be allowed so orchestrator dispatch can reach agent panes.
+	result.Allowed = true
+	result.Reason = "message dispatch allowed"
+	return result
 }
 
 func (e *Enforcer) checkFileRead(perm types.Permission, target string, result PermissionResult) PermissionResult {

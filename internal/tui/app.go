@@ -28,6 +28,14 @@ const (
 	sidebarPct      = 25
 )
 
+type panelLayout struct {
+	sidebarInnerW int
+	sidebarInnerH int
+	rightInnerW   int
+	contentInnerH int
+	logsInnerH    int
+}
+
 // Model is the top-level bubbletea model for the TUI dashboard.
 type Model struct {
 	bridge       *StateBridge
@@ -244,80 +252,110 @@ func (m *Model) syncContentWithSidebar() {
 // recalcSizes recomputes panel dimensions after a resize.
 func (m *Model) recalcSizes() {
 	m.helpOverlay.SetSize(m.width, m.height)
-	m.compact = m.width < 100 || m.height < 30
-
-	availableHeight := m.height - 2 // header + footer legend
-	if availableHeight < 3 {
-		availableHeight = 3
-	}
-
-	sidebarW := m.sidebarWidth()
-	rightW := m.width - sidebarW
-
-	// Sidebar inner dimensions (border takes 4 chars width, 4 chars height).
-	sidebarInnerW := sidebarW - 4
-	if sidebarInnerW < 0 {
-		sidebarInnerW = 0
-	}
-	sidebarInnerH := availableHeight - 4
-	if sidebarInnerH < 0 {
-		sidebarInnerH = 0
-	}
-	m.sidebar.SetSize(sidebarInnerW, sidebarInnerH)
-
-	// Right side split: 60% content, 40% logs.
-	contentHeight := availableHeight * 60 / 100
-	if m.compact {
-		contentHeight = availableHeight * 55 / 100
-	}
-	if contentHeight < 5 {
-		contentHeight = 5
-	}
-	logsHeight := availableHeight - contentHeight
-
-	rightInnerW := rightW - 4
-	if rightInnerW < 0 {
-		rightInnerW = 0
-	}
-	contentInnerH := contentHeight - 4
-	if contentInnerH < 0 {
-		contentInnerH = 0
-	}
-	logsInnerH := logsHeight - 4
-	if logsInnerH < 0 {
-		logsInnerH = 0
-	}
-
-	m.contentPanel.SetSize(rightInnerW, contentInnerH)
-	m.logsPanel.SetSize(rightInnerW, logsInnerH)
+	m.compact = isCompactLayout(m.width, m.height)
+	layout := computePanelLayout(m.width, m.height)
+	m.sidebar.SetSize(layout.sidebarInnerW, layout.sidebarInnerH)
+	m.contentPanel.SetSize(layout.rightInnerW, layout.contentInnerH)
+	m.logsPanel.SetSize(layout.rightInnerW, layout.logsInnerH)
 }
 
 // sidebarWidth returns the sidebar width clamped to min/max.
 func (m Model) sidebarWidth() int {
-	if m.width <= 0 {
+	return sidebarWidthFor(m.width, isCompactLayout(m.width, m.height))
+}
+
+func isCompactLayout(width, height int) bool {
+	if width > 0 && width < 100 {
+		return true
+	}
+	if height > 0 && height < 30 {
+		return true
+	}
+	return false
+}
+
+func sidebarWidthFor(width int, compact bool) int {
+	if width <= 0 {
 		return 0
 	}
-	if m.compact {
-		w := m.width * 30 / 100
+	if compact {
+		w := width * 30 / 100
 		if w < sidebarMinWidth {
 			w = sidebarMinWidth
 		}
-		if w > m.width {
-			w = m.width
+		if w > width {
+			w = width
 		}
 		return w
 	}
-	w := m.width * sidebarPct / 100
+	w := width * sidebarPct / 100
 	if w < sidebarMinWidth {
 		w = sidebarMinWidth
 	}
 	if w > sidebarMaxWidth {
 		w = sidebarMaxWidth
 	}
-	if w > m.width {
-		w = m.width
+	if w > width {
+		w = width
 	}
 	return w
+}
+
+func computePanelLayout(width, height int) panelLayout {
+	availableHeight := height - 2 // header + footer legend
+	if availableHeight < 3 {
+		availableHeight = 3
+	}
+
+	compact := isCompactLayout(width, height)
+	sidebarW := sidebarWidthFor(width, compact)
+	rightW := width - sidebarW
+	if rightW < 0 {
+		rightW = 0
+	}
+
+	contentHeight, logsHeight := splitRightHeights(availableHeight, compact)
+
+	return panelLayout{
+		sidebarInnerW: max(0, sidebarW-4),
+		sidebarInnerH: max(0, availableHeight-4),
+		rightInnerW:   max(0, rightW-4),
+		contentInnerH: max(0, contentHeight-4),
+		logsInnerH:    max(0, logsHeight-4),
+	}
+}
+
+func splitRightHeights(availableHeight int, compact bool) (contentHeight, logsHeight int) {
+	if availableHeight <= 0 {
+		return 0, 0
+	}
+
+	ratio := 60
+	if compact {
+		ratio = 55
+	}
+
+	contentHeight = availableHeight * ratio / 100
+	if contentHeight < 5 {
+		contentHeight = 5
+	}
+	if contentHeight > availableHeight {
+		contentHeight = availableHeight
+	}
+	logsHeight = availableHeight - contentHeight
+
+	// Keep logs usable when space allows.
+	if availableHeight >= 9 && logsHeight < 4 {
+		logsHeight = 4
+		contentHeight = availableHeight - logsHeight
+	}
+	if contentHeight < 0 {
+		contentHeight = 0
+	}
+	if logsHeight < 0 {
+		logsHeight = 0
+	}
+	return contentHeight, logsHeight
 }
 
 // View implements tea.Model. It renders a three-panel lazydocker-style layout.
@@ -330,47 +368,12 @@ func (m Model) View() string {
 		return m.helpOverlay.View()
 	}
 
-	availableHeight := m.height - 2
-	if availableHeight < 3 {
-		availableHeight = 3
-	}
-
-	sidebarW := m.sidebarWidth()
-	rightW := m.width - sidebarW
-
-	// Inner content dimensions (borders take 4 chars).
-	sidebarInnerW := sidebarW - 4
-	if sidebarInnerW < 0 {
-		sidebarInnerW = 0
-	}
-	sidebarInnerH := availableHeight - 4
-	if sidebarInnerH < 0 {
-		sidebarInnerH = 0
-	}
-
-	contentHeight := availableHeight * 60 / 100
-	if contentHeight < 6 {
-		contentHeight = 6
-	}
-	logsHeight := availableHeight - contentHeight
-
-	rightInnerW := rightW - 4
-	if rightInnerW < 0 {
-		rightInnerW = 0
-	}
-	contentInnerH := contentHeight - 4
-	if contentInnerH < 0 {
-		contentInnerH = 0
-	}
-	logsInnerH := logsHeight - 4
-	if logsInnerH < 0 {
-		logsInnerH = 0
-	}
+	layout := computePanelLayout(m.width, m.height)
 
 	// Render panels.
-	sidebarView := m.renderPanel("Agents", "fleet", m.sidebar.View(), sidebarInnerW, sidebarInnerH, m.activePanel == PanelSidebar)
-	contentView := m.renderPanel("Workspace", m.contentPanel.ActiveTab().String(), m.contentPanel.View(), rightInnerW, contentInnerH, m.activePanel == PanelContent)
-	logsView := m.renderPanel("Event Log", m.logsPanel.ModeLabel(), m.logsPanel.View(), rightInnerW, logsInnerH, m.activePanel == PanelLogs)
+	sidebarView := m.renderPanel("Agents", "fleet", m.sidebar.View(), layout.sidebarInnerW, layout.sidebarInnerH, m.activePanel == PanelSidebar)
+	contentView := m.renderPanel("Workspace", m.contentPanel.ActiveTab().String(), m.contentPanel.View(), layout.rightInnerW, layout.contentInnerH, m.activePanel == PanelContent)
+	logsView := m.renderPanel("Event Log", m.logsPanel.ModeLabel(), m.logsPanel.View(), layout.rightInnerW, layout.logsInnerH, m.activePanel == PanelLogs)
 
 	// Compose layout: sidebar | (content / logs).
 	rightColumn := lipgloss.JoinVertical(lipgloss.Left, contentView, logsView)
@@ -450,6 +453,13 @@ func (m Model) renderLegend() string {
 		scope = "logs"
 	}
 	return m.theme.RenderLegend(m.width, scope, items)
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (m Model) renderPanel(title, meta, body string, innerW, innerH int, focused bool) string {

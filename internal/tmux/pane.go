@@ -108,7 +108,7 @@ func (m *PaneManager) SendKeys(ctx context.Context, paneID string, text string) 
 		return fmt.Errorf("send keys to pane %q: %w", paneID, err)
 	}
 
-	_, err = m.cmd.Run(ctx, "send-keys", "-t", paneID, sanitized, "Enter")
+	_, err = m.cmd.Run(ctx, "send-keys", "-t", paneID, "--", sanitized, "Enter")
 	if err != nil {
 		return fmt.Errorf("send keys to pane %q: %w", paneID, err)
 	}
@@ -129,7 +129,7 @@ func (m *PaneManager) SendKeysLiteral(ctx context.Context, paneID string, text s
 		return fmt.Errorf("send literal keys to pane %q: %w", paneID, err)
 	}
 	// Send text literally — tmux will not interpret key names.
-	_, err := m.cmd.Run(ctx, "send-keys", "-l", "-t", paneID, text)
+	_, err := m.cmd.Run(ctx, "send-keys", "-l", "-t", paneID, "--", text)
 	if err != nil {
 		return fmt.Errorf("send literal keys to pane %q: %w", paneID, err)
 	}

@@ -301,6 +301,12 @@ func TestDetectRateLimit(t *testing.T) {
 			wantMin:     60 * time.Second,
 		},
 		{
+			name:        "startup-tip-not-rate-limited",
+			paneContent: "Tip: New 2x rate limits until April 2nd.\n",
+			wantLimited: false,
+			wantMin:     0,
+		},
+		{
 			name:        "clean-output",
 			paneContent: "normal output\n>\n",
 			wantLimited: false,

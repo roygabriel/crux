@@ -277,3 +277,17 @@ func TestFailClosed_SandboxError(t *testing.T) {
 		t.Error("expected sandbox error to result in deny")
 	}
 }
+
+func TestMessageSend_AllowedForAllPermissions(t *testing.T) {
+	t.Parallel()
+	e, _ := newTestEnforcer(t)
+
+	for _, perm := range []types.Permission{
+		types.PermReadonly, types.PermStandard, types.PermElevated, types.PermAutonomous,
+	} {
+		r := e.Check(perm, ActionMessageSend, "task")
+		if !r.Allowed {
+			t.Fatalf("perm %s: expected message_send allowed, got reason: %s", perm, r.Reason)
+		}
+	}
+}

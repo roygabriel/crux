@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // LegendItem represents one key/action hint in the footer command list.
@@ -101,15 +102,15 @@ func padOrTruncate(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) > width {
-		if width <= 3 {
-			return string(runes[:width])
+	if ansi.StringWidthWc(s) > width {
+		tail := ""
+		if width > 3 {
+			tail = "..."
 		}
-		return string(runes[:width-3]) + "..."
+		s = ansi.TruncateWc(s, width, tail)
 	}
-	if len(runes) < width {
-		return s + strings.Repeat(" ", width-len(runes))
+	if pad := width - ansi.StringWidthWc(s); pad > 0 {
+		return s + strings.Repeat(" ", pad)
 	}
 	return s
 }

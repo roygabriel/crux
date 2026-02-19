@@ -134,11 +134,21 @@ func (a *Assigner) idleAgents() []*agent.AgentInstance {
 	var idle []*agent.AgentInstance
 	for _, inst := range all {
 		if inst.Agent.Status == types.StatusIdle &&
+			isTaskExecutionRole(inst.Agent.Role) &&
 			(a.readyGate == nil || a.readyGate(inst.Agent.ID)) {
 			idle = append(idle, inst)
 		}
 	}
 	return idle
+}
+
+func isTaskExecutionRole(role types.AgentRole) bool {
+	switch role {
+	case types.RoleEngineer, types.RoleSoftwareEngineer, types.RoleSystemsEngineer:
+		return true
+	default:
+		return false
+	}
 }
 
 // selectAgent picks the best idle agent for the given prompt.

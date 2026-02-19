@@ -25,8 +25,9 @@ var (
 	// panicRe matches Go panic and fatal error patterns at line start.
 	panicRe = regexp.MustCompile(`(?m)^(panic:|fatal error:)\s*(.+)$`)
 
-	// rateLimitRe matches rate-limiting indicators in pane output.
-	rateLimitRe = regexp.MustCompile(`(?i)(?:rate[_\s-]?limit|429|too many requests|quota exceeded)`)
+	// rateLimitRe matches concrete rate-limiting indicators in pane output.
+	// It avoids matching benign marketing/help text like "rate limits".
+	rateLimitRe = regexp.MustCompile(`(?i)(?:\brate[_\s-]?limit(?:ed)?(?:\s+exceeded)?\b|\b429\b|too many requests|quota exceeded)`)
 
 	// retryAfterRe extracts a numeric duration from retry/wait messages.
 	retryAfterRe = regexp.MustCompile(`(?i)(?:retry|wait)\s*(?:after\s+)?(\d+)\s*(s|sec|seconds?|m|min|minutes?)`)

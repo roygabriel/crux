@@ -3,6 +3,7 @@ package phase_test
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/roygabriel/crux/internal/phase"
@@ -181,5 +182,48 @@ func TestParsePromptDoc_Acceptance(t *testing.T) {
 	// Prompt 1 has 3 acceptance criteria.
 	if len(prompts[0].Acceptance) != 3 {
 		t.Errorf("len(prompts[0].Acceptance) = %d, want 3", len(prompts[0].Acceptance))
+	}
+}
+
+func TestParsePromptDoc_NoTotalPromptHeadings(t *testing.T) {
+	t.Parallel()
+
+	content := `# PHASE 9B PROMPTS: Example
+
+## Prompt 1: First task
+### Task
+Do first.
+### Verification
+` + "```bash\ntrue\n```" + `
+
+---
+
+## Prompt 2: Second task
+### Task
+Do second.
+### Verification
+` + "```bash\ntrue\n```" + `
+`
+
+	path := filepath.Join(t.TempDir(), "PHASE9B-PROMPT.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write prompt doc: %v", err)
+	}
+
+	prompts, err := phase.ParsePromptDoc(path)
+	if err != nil {
+		t.Fatalf("ParsePromptDoc: %v", err)
+	}
+	if len(prompts) != 2 {
+		t.Fatalf("len(prompts) = %d, want 2", len(prompts))
+	}
+	if prompts[0].PromptNumber != 1 || prompts[1].PromptNumber != 2 {
+		t.Fatalf("prompt numbers = (%d,%d), want (1,2)", prompts[0].PromptNumber, prompts[1].PromptNumber)
+	}
+	if prompts[0].TotalPrompts != 2 || prompts[1].TotalPrompts != 2 {
+		t.Fatalf("total prompts = (%d,%d), want (2,2)", prompts[0].TotalPrompts, prompts[1].TotalPrompts)
+	}
+	if prompts[0].PhaseID != "9B" || prompts[1].PhaseID != "9B" {
+		t.Fatalf("phase IDs = (%q,%q), want (\"9B\",\"9B\")", prompts[0].PhaseID, prompts[1].PhaseID)
 	}
 }

@@ -97,6 +97,7 @@ func makeInstance(id string, status types.AgentStatus, caps []plugin.Capability)
 			ID:     types.AgentID(id),
 			Status: status,
 			Plugin: "mock",
+			Role:   types.RoleEngineer,
 		},
 		Plugin:     &mockPlugin{name: "mock", caps: caps},
 		LaunchedAt: time.Now(),
@@ -178,6 +179,54 @@ func TestAssignNext_NoIdle(t *testing.T) {
 	}
 	if agentID != "" {
 		t.Errorf("AssignNext() agentID = %q, want empty", agentID)
+	}
+}
+
+func TestAssignNext_SkipsNonExecutionRoles(t *testing.T) {
+	orchestratorAgent := makeInstance("orchestrator-1", types.StatusIdle, []plugin.Capability{plugin.CapCodeGen})
+	orchestratorAgent.Agent.Role = types.RoleOrchestrator
+	reviewerAgent := makeInstance("reviewer-1", types.StatusIdle, []plugin.Capability{plugin.CapCodeGen})
+	reviewerAgent.Agent.Role = types.RoleReviewer
+	engineerAgent := makeInstance("engineer-1", types.StatusIdle, []plugin.Capability{plugin.CapCodeGen})
+	engineerAgent.Agent.Role = types.RoleEngineer
+
+	lister := &mockAgentLister{instances: []*agent.AgentInstance{orchestratorAgent, reviewerAgent, engineerAgent}}
+	provider := &mockPromptProvider{
+		phase:  &phase.PhaseSpec{ID: "1A", Name: "Foundation"},
+		prompt: &phase.PromptContract{PromptNumber: 1, Task: "create types"},
+	}
+	ws := orchestrator.NewWorldState("sess-1")
+	assigner := orchestrator.NewAssigner(lister, provider, ws, nil)
+
+	agentID, err := assigner.AssignNext(context.Background())
+	if err != nil {
+		t.Fatalf("AssignNext() error = %v", err)
+	}
+	if agentID != "engineer-1" {
+		t.Fatalf("AssignNext() agentID = %q, want engineer-1", agentID)
+	}
+}
+
+func TestAssignNext_NoExecutionRolesAvailable(t *testing.T) {
+	orchestratorAgent := makeInstance("orchestrator-1", types.StatusIdle, []plugin.Capability{plugin.CapCodeGen})
+	orchestratorAgent.Agent.Role = types.RoleOrchestrator
+	reviewerAgent := makeInstance("reviewer-1", types.StatusIdle, []plugin.Capability{plugin.CapCodeGen})
+	reviewerAgent.Agent.Role = types.RoleReviewer
+
+	lister := &mockAgentLister{instances: []*agent.AgentInstance{orchestratorAgent, reviewerAgent}}
+	provider := &mockPromptProvider{
+		phase:  &phase.PhaseSpec{ID: "1A", Name: "Foundation"},
+		prompt: &phase.PromptContract{PromptNumber: 1, Task: "create types"},
+	}
+	ws := orchestrator.NewWorldState("sess-1")
+	assigner := orchestrator.NewAssigner(lister, provider, ws, nil)
+
+	agentID, err := assigner.AssignNext(context.Background())
+	if !errors.Is(err, orchestrator.ErrNoAvailableAgent) {
+		t.Fatalf("AssignNext() error = %v, want ErrNoAvailableAgent", err)
+	}
+	if agentID != "" {
+		t.Fatalf("AssignNext() agentID = %q, want empty", agentID)
 	}
 }
 

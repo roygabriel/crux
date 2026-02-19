@@ -49,6 +49,8 @@ const (
 
 // promptHeadingRe matches "## Prompt N of M: Title".
 var promptHeadingRe = regexp.MustCompile(`^##\s+Prompt\s+(\d+)\s+of\s+(\d+):\s*(.+)`)
+var promptHeadingNoTotalRe = regexp.MustCompile(`^##\s+Prompt\s+(\d+)\s*:\s*(.+)`)
+var phaseHeaderRe = regexp.MustCompile(`(?i)^phase\s+([a-z0-9]+)\b`)
 
 // annotationRe matches trailing parenthetical annotations like " (repo layout)".
 var annotationRe = regexp.MustCompile(`\s*\([^)]+\)\s*$`)
@@ -126,10 +128,11 @@ func parsePromptDoc(text string) ([]PromptContract, error) {
 		// H1: Phase header.
 		if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
 			rest := strings.TrimPrefix(trimmed, "# ")
-			// "Phase 1A Implementation Prompts" → extract "1A"
-			rest = strings.TrimPrefix(rest, "Phase ")
-			if idx := strings.IndexByte(rest, ' '); idx >= 0 {
-				phaseID = types.PhaseID(rest[:idx])
+			// Match case-insensitive forms like:
+			// - "Phase 1A Implementation Prompts"
+			// - "PHASE 1A PROMPTS: ..."
+			if m := phaseHeaderRe.FindStringSubmatch(rest); m != nil {
+				phaseID = types.PhaseID(strings.ToUpper(m[1]))
 			}
 			continue
 		}
@@ -150,6 +153,18 @@ func parsePromptDoc(text string) ([]PromptContract, error) {
 				PromptNumber: n,
 				TotalPrompts: total,
 				Title:        strings.TrimSpace(m[3]),
+			}
+			currentSub = promptSubNone
+			continue
+		}
+		if m := promptHeadingNoTotalRe.FindStringSubmatch(trimmed); m != nil {
+			flushCurrent()
+			n := parseNum(m[1])
+			current = &PromptContract{
+				PhaseID:      phaseID,
+				PromptNumber: n,
+				TotalPrompts: 0,
+				Title:        strings.TrimSpace(m[2]),
 			}
 			currentSub = promptSubNone
 			continue
@@ -209,6 +224,16 @@ func parsePromptDoc(text string) ([]PromptContract, error) {
 
 	// Flush final prompt.
 	flushCurrent()
+
+	// Backfill totals when headings omitted "of M".
+	if len(prompts) > 0 {
+		total := len(prompts)
+		for i := range prompts {
+			if prompts[i].TotalPrompts == 0 {
+				prompts[i].TotalPrompts = total
+			}
+		}
+	}
 
 	return prompts, nil
 }

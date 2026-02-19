@@ -96,6 +96,9 @@ func (e *Engine) LoadAll() error {
 			// Missing prompt doc is not fatal.
 			e.logger.Debug("no prompt doc found", "phase", spec.ID, "path", promptPath)
 		} else {
+			if len(prompts) == 0 {
+				return fmt.Errorf("phase %s prompt doc %s parsed with 0 prompts; expected headings like '## Prompt 1 of N:' or '## Prompt 1:'", spec.ID, filepath.Base(promptPath))
+			}
 			e.prompts[spec.ID] = prompts
 		}
 

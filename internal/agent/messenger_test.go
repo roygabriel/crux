@@ -67,9 +67,10 @@ func TestMessengerSend(t *testing.T) {
 		if len(args) > 0 && args[0] == "split-window" {
 			return "%1", nil
 		}
-		// Literal sends have -l at args[1]; capture the text at args[4].
-		if len(args) >= 5 && args[0] == "send-keys" && args[1] == "-l" {
-			sentTexts = append(sentTexts, args[4])
+		// Literal sends have -l at args[1]; capture the text at args[5]
+		// because "--" delimiter is inserted at args[4].
+		if len(args) >= 6 && args[0] == "send-keys" && args[1] == "-l" {
+			sentTexts = append(sentTexts, args[5])
 		}
 		return "", nil
 	}}
@@ -112,8 +113,8 @@ func TestMessengerSendChunkedMessage(t *testing.T) {
 		if len(args) > 0 && args[0] == "split-window" {
 			return "%1", nil
 		}
-		if len(args) >= 5 && args[0] == "send-keys" && args[1] == "-l" {
-			sentTexts = append(sentTexts, args[4])
+		if len(args) >= 6 && args[0] == "send-keys" && args[1] == "-l" {
+			sentTexts = append(sentTexts, args[5])
 		}
 		return "", nil
 	}}
@@ -154,8 +155,8 @@ func TestMessengerSendLongLineChunked(t *testing.T) {
 		if len(args) > 0 && args[0] == "split-window" {
 			return "%1", nil
 		}
-		if len(args) >= 5 && args[0] == "send-keys" && args[1] == "-l" {
-			sentTexts = append(sentTexts, args[4])
+		if len(args) >= 6 && args[0] == "send-keys" && args[1] == "-l" {
+			sentTexts = append(sentTexts, args[5])
 		}
 		return "", nil
 	}}
@@ -198,8 +199,8 @@ func TestMessengerSendMarkdownWithCodeFences(t *testing.T) {
 		if len(args) > 0 && args[0] == "split-window" {
 			return "%1", nil
 		}
-		if len(args) >= 5 && args[0] == "send-keys" && args[1] == "-l" {
-			sentTexts = append(sentTexts, args[4])
+		if len(args) >= 6 && args[0] == "send-keys" && args[1] == "-l" {
+			sentTexts = append(sentTexts, args[5])
 		}
 		return "", nil
 	}}

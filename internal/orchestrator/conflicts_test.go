@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -237,5 +240,74 @@ func TestTrackUntrack(t *testing.T) {
 
 	if len(events) != 0 {
 		t.Errorf("expected no conflict events after untrack, got %d", len(events))
+	}
+}
+
+func TestExecGitDiffer_NoHEAD(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	// git init with no commits — HEAD is unborn.
+	cmd := exec.Command("git", "init")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", out, err)
+	}
+
+	differ := orchestrator.NewExecGitDiffer(dir)
+	files, err := differ.DiffNames(context.Background())
+	if err != nil {
+		t.Fatalf("DiffNames() error = %v, want nil", err)
+	}
+	if files != nil {
+		t.Errorf("DiffNames() = %v, want nil", files)
+	}
+}
+
+func TestExecGitDiffer_WithCommitAndChanges(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Initialize repo and create a commit.
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s: %v", args, out, err)
+		}
+	}
+
+	// Create and commit a file.
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"add", "main.go"},
+		{"commit", "-m", "initial"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s: %v", args, out, err)
+		}
+	}
+
+	// Modify the file to create a diff.
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	differ := orchestrator.NewExecGitDiffer(dir)
+	files, err := differ.DiffNames(context.Background())
+	if err != nil {
+		t.Fatalf("DiffNames() error = %v", err)
+	}
+	if len(files) != 1 || files[0] != "main.go" {
+		t.Errorf("DiffNames() = %v, want [main.go]", files)
 	}
 }

@@ -327,6 +327,14 @@ func NewExecGitDiffer(root string) GitDiffer {
 
 // DiffNames returns file paths changed in the working tree.
 func (d *execGitDiffer) DiffNames(ctx context.Context) ([]string, error) {
+	// Preflight: verify HEAD exists. Repos with no commits have an
+	// unborn HEAD and git diff HEAD would fail with exit 128.
+	check := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "HEAD")
+	check.Dir = d.root
+	if err := check.Run(); err != nil {
+		return nil, nil // no commits → no conflicts
+	}
+
 	cmd := exec.CommandContext(ctx, "git", "diff", "--name-only", "HEAD")
 	cmd.Dir = d.root
 

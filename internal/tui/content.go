@@ -188,7 +188,7 @@ func (p *ContentPanel) viewportHeight() int {
 }
 
 func (p *ContentPanel) contentLineCount() int {
-	lines := p.contentLines()
+	lines := p.visibleContentLines()
 	return len(lines)
 }
 
@@ -206,7 +206,7 @@ func (p *ContentPanel) View() string {
 	}
 
 	// Scrollable content area.
-	lines := p.contentLines()
+	lines := p.visibleContentLines()
 	viewport := p.viewportHeight()
 
 	start := p.scrollPos
@@ -219,12 +219,6 @@ func (p *ContentPanel) View() string {
 	}
 
 	for i := start; i < end; i++ {
-		if p.width > 0 {
-			runes := []rune(lines[i])
-			if len(runes) > p.width {
-				lines[i] = string(runes[:p.width])
-			}
-		}
 		b.WriteString(lines[i])
 		if i < end-1 {
 			b.WriteByte('\n')
@@ -313,6 +307,10 @@ func (p *ContentPanel) contentLines() []string {
 	}
 }
 
+func (p *ContentPanel) visibleContentLines() []string {
+	return wrapLines(p.contentLines(), p.width)
+}
+
 func (p *ContentPanel) outputLines() []string {
 	if p.agent.PaneContent == "" {
 		return []string{"Waiting for output..."}
@@ -381,4 +379,42 @@ func (p *ContentPanel) agentID() types.AgentID {
 		return ""
 	}
 	return p.agent.ID
+}
+
+func wrapLines(lines []string, width int) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	if width <= 0 {
+		return lines
+	}
+
+	wrapped := make([]string, 0, len(lines))
+	for _, line := range lines {
+		wrapped = append(wrapped, wrapLine(line, width)...)
+	}
+	return wrapped
+}
+
+func wrapLine(line string, width int) []string {
+	if width <= 0 {
+		return []string{line}
+	}
+	runes := []rune(line)
+	if len(runes) == 0 {
+		return []string{""}
+	}
+	if len(runes) <= width {
+		return []string{line}
+	}
+
+	var out []string
+	for len(runes) > width {
+		out = append(out, string(runes[:width]))
+		runes = runes[width:]
+	}
+	if len(runes) > 0 {
+		out = append(out, string(runes))
+	}
+	return out
 }

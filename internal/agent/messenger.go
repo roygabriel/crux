@@ -32,6 +32,9 @@ type Messenger struct {
 // NewMessenger creates a Messenger backed by the given PaneManager
 // and agent Registry.
 func NewMessenger(pm *tmux.PaneManager, registry *Registry, logger *slog.Logger) *Messenger {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Messenger{
 		pm:           pm,
 		registry:     registry,
@@ -68,13 +71,47 @@ func (m *Messenger) Send(ctx context.Context, agentID types.AgentID, msg types.M
 
 	text := inst.Plugin.FormatMessage(msg)
 	if text == "" {
+		m.logger.Debug("skipping empty formatted message",
+			"agent_id", agentID,
+			"message_id", msg.ID,
+			"pane_id", inst.Agent.PaneID,
+		)
 		return nil
 	}
 
 	chunks := chunkMessage(text, tmux.MaxInputLength)
-	for _, chunk := range chunks {
+	beforeCapture, capturedBefore := m.debugCaptureSnapshot(ctx, inst.Agent.PaneID)
+	for i, chunk := range chunks {
+		m.logger.Debug("sending message chunk",
+			"agent_id", agentID,
+			"message_id", msg.ID,
+			"pane_id", inst.Agent.PaneID,
+			"chunk_index", i+1,
+			"chunk_total", len(chunks),
+			"chunk_bytes", len(chunk),
+		)
 		if err := m.pm.SendKeysLiteral(ctx, inst.Agent.PaneID, chunk); err != nil {
 			return fmt.Errorf("send to agent %q: %w", agentID, err)
+		}
+	}
+	if capturedBefore {
+		afterCapture, err := m.pm.Capture(ctx, inst.Agent.PaneID, 0)
+		if err != nil {
+			m.logger.Debug("post-send capture failed",
+				"agent_id", agentID,
+				"message_id", msg.ID,
+				"pane_id", inst.Agent.PaneID,
+				"error", err,
+			)
+		} else {
+			m.logger.Debug("post-send capture delta",
+				"agent_id", agentID,
+				"message_id", msg.ID,
+				"pane_id", inst.Agent.PaneID,
+				"changed", beforeCapture != afterCapture,
+				"before_bytes", len(beforeCapture),
+				"after_bytes", len(afterCapture),
+			)
 		}
 	}
 
@@ -101,6 +138,7 @@ func (m *Messenger) SendRawKeys(ctx context.Context, agentID types.AgentID, keys
 
 	m.logger.Info("sent raw keys to agent",
 		"agent_id", agentID,
+		"pane_id", inst.Agent.PaneID,
 		"keys", keys,
 	)
 	return nil
@@ -127,6 +165,11 @@ func (m *Messenger) WaitForResponse(ctx context.Context, agentID types.AgentID, 
 		if err != nil {
 			return "", fmt.Errorf("wait for response from agent %q: capture: %w", agentID, err)
 		}
+		m.logger.Debug("wait response capture",
+			"agent_id", agentID,
+			"pane_id", inst.Agent.PaneID,
+			"bytes", len(content),
+		)
 
 		if !inst.Plugin.DetectBusy(content) {
 			return content, nil
@@ -138,6 +181,21 @@ func (m *Messenger) WaitForResponse(ctx context.Context, agentID types.AgentID, 
 		case <-ticker.C:
 		}
 	}
+}
+
+func (m *Messenger) debugCaptureSnapshot(ctx context.Context, paneID string) (string, bool) {
+	if m.logger == nil || !m.logger.Enabled(ctx, slog.LevelDebug) {
+		return "", false
+	}
+	snap, err := m.pm.Capture(ctx, paneID, 0)
+	if err != nil {
+		m.logger.Debug("pre-send capture failed",
+			"pane_id", paneID,
+			"error", err,
+		)
+		return "", false
+	}
+	return snap, true
 }
 
 // chunkMessage splits text into chunks suitable for tmux send-keys.

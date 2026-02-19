@@ -74,16 +74,20 @@ type mockPlugin struct {
 	caps []plugin.Capability
 }
 
-func (m *mockPlugin) Name() string                                                { return m.name }
-func (m *mockPlugin) LaunchCmd(_ plugin.AgentConfig) (string, []string, error)    { return "", nil, nil }
-func (m *mockPlugin) DetectReady(_ string) bool                                   { return false }
-func (m *mockPlugin) DetectBusy(_ string) bool                                    { return false }
-func (m *mockPlugin) DetectError(_ string) (string, bool)                         { return "", false }
-func (m *mockPlugin) DetectRateLimit(_ string) (time.Duration, bool)              { return 0, false }
-func (m *mockPlugin) DetectPrompt(_ string) (plugin.PromptResponse, bool)         { return plugin.PromptResponse{}, false }
-func (m *mockPlugin) FormatMessage(_ types.Message) string                        { return "" }
-func (m *mockPlugin) ParseOutput(_ string) (plugin.AgentOutput, error)            { return plugin.AgentOutput{}, nil }
-func (m *mockPlugin) Capabilities() []plugin.Capability                           { return m.caps }
+func (m *mockPlugin) Name() string                                             { return m.name }
+func (m *mockPlugin) LaunchCmd(_ plugin.AgentConfig) (string, []string, error) { return "", nil, nil }
+func (m *mockPlugin) DetectReady(_ string) bool                                { return false }
+func (m *mockPlugin) DetectBusy(_ string) bool                                 { return false }
+func (m *mockPlugin) DetectError(_ string) (string, bool)                      { return "", false }
+func (m *mockPlugin) DetectRateLimit(_ string) (time.Duration, bool)           { return 0, false }
+func (m *mockPlugin) DetectPrompt(_ string) (plugin.PromptResponse, bool) {
+	return plugin.PromptResponse{}, false
+}
+func (m *mockPlugin) FormatMessage(_ types.Message) string { return "" }
+func (m *mockPlugin) ParseOutput(_ string) (plugin.AgentOutput, error) {
+	return plugin.AgentOutput{}, nil
+}
+func (m *mockPlugin) Capabilities() []plugin.Capability { return m.caps }
 
 // --- Helper ---
 
@@ -174,6 +178,49 @@ func TestAssignNext_NoIdle(t *testing.T) {
 	}
 	if agentID != "" {
 		t.Errorf("AssignNext() agentID = %q, want empty", agentID)
+	}
+}
+
+func TestAssignNext_ReadyGateFiltersIdleAgents(t *testing.T) {
+	agent1 := makeInstance("claude-1", types.StatusIdle, []plugin.Capability{plugin.CapCodeGen})
+	agent2 := makeInstance("codex-1", types.StatusIdle, []plugin.Capability{plugin.CapCodeGen})
+	lister := &mockAgentLister{instances: []*agent.AgentInstance{agent1, agent2}}
+	provider := &mockPromptProvider{
+		phase:  &phase.PhaseSpec{ID: "1A", Name: "Foundation"},
+		prompt: &phase.PromptContract{PromptNumber: 1, Task: "create types"},
+	}
+	ws := orchestrator.NewWorldState("sess-1")
+	assigner := orchestrator.NewAssigner(lister, provider, ws, nil)
+	assigner.SetReadyGate(func(id types.AgentID) bool {
+		return id == "codex-1"
+	})
+
+	agentID, err := assigner.AssignNext(context.Background())
+	if err != nil {
+		t.Fatalf("AssignNext() error = %v", err)
+	}
+	if agentID != "codex-1" {
+		t.Fatalf("AssignNext() agentID = %q, want codex-1", agentID)
+	}
+}
+
+func TestAssignNext_ReadyGateNoReadyAgents(t *testing.T) {
+	agent1 := makeInstance("claude-1", types.StatusIdle, []plugin.Capability{plugin.CapCodeGen})
+	lister := &mockAgentLister{instances: []*agent.AgentInstance{agent1}}
+	provider := &mockPromptProvider{
+		phase:  &phase.PhaseSpec{ID: "1A", Name: "Foundation"},
+		prompt: &phase.PromptContract{PromptNumber: 1, Task: "create types"},
+	}
+	ws := orchestrator.NewWorldState("sess-1")
+	assigner := orchestrator.NewAssigner(lister, provider, ws, nil)
+	assigner.SetReadyGate(func(types.AgentID) bool { return false })
+
+	agentID, err := assigner.AssignNext(context.Background())
+	if !errors.Is(err, orchestrator.ErrNoAvailableAgent) {
+		t.Fatalf("AssignNext() error = %v, want ErrNoAvailableAgent", err)
+	}
+	if agentID != "" {
+		t.Fatalf("AssignNext() agentID = %q, want empty", agentID)
 	}
 }
 

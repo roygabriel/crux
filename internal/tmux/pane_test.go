@@ -271,6 +271,19 @@ func TestPaneManagerCapture(t *testing.T) {
 				if args[0] != "capture-pane" {
 					t.Errorf("expected capture-pane, got %s", args[0])
 				}
+				hasJ := false
+				hasN := false
+				for _, a := range args {
+					if a == "-J" {
+						hasJ = true
+					}
+					if a == "-N" {
+						hasN = true
+					}
+				}
+				if !hasJ || !hasN {
+					t.Errorf("expected -J and -N in args %v", args)
+				}
 				// Verify -S flag is present with correct value.
 				found := false
 				for i, a := range args {
@@ -290,10 +303,21 @@ func TestPaneManagerCapture(t *testing.T) {
 			paneID: "%0",
 			lines:  0,
 			runFunc: func(_ context.Context, args ...string) (string, error) {
+				hasJ := false
+				hasN := false
 				for _, a := range args {
 					if a == "-S" {
 						t.Errorf("unexpected -S flag in args %v", args)
 					}
+					if a == "-J" {
+						hasJ = true
+					}
+					if a == "-N" {
+						hasN = true
+					}
+				}
+				if !hasJ || !hasN {
+					t.Errorf("expected -J and -N in args %v", args)
 				}
 				return "visible content", nil
 			},

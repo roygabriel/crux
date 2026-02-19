@@ -74,7 +74,10 @@ func (m *PaneManager) Capture(ctx context.Context, paneID string, lines int) (st
 		return "", fmt.Errorf("pane ID must not be empty")
 	}
 
-	args := []string{"capture-pane", "-t", paneID, "-p"}
+	// Use -J and -N for better fidelity in dashboard rendering:
+	// -J joins wrapped screen lines
+	// -N preserves trailing spaces (important for ASCII alignment)
+	args := []string{"capture-pane", "-t", paneID, "-p", "-J", "-N"}
 	if lines > 0 {
 		args = append(args, "-S", fmt.Sprintf("-%d", lines))
 	}
@@ -83,6 +86,11 @@ func (m *PaneManager) Capture(ctx context.Context, paneID string, lines int) (st
 	if err != nil {
 		return "", fmt.Errorf("capture pane %q: %w", paneID, err)
 	}
+	m.logger.Debug("captured pane",
+		"pane_id", paneID,
+		"bytes", len(out),
+		"lines", lines,
+	)
 
 	return out, nil
 }
@@ -130,6 +138,10 @@ func (m *PaneManager) SendKeysLiteral(ctx context.Context, paneID string, text s
 	if err != nil {
 		return fmt.Errorf("send literal keys to pane %q (enter): %w", paneID, err)
 	}
+	m.logger.Debug("sent literal keys",
+		"pane_id", paneID,
+		"bytes", len(text),
+	)
 	return nil
 }
 
@@ -149,6 +161,10 @@ func (m *PaneManager) SendKeysRaw(ctx context.Context, paneID string, keys ...st
 	if err != nil {
 		return fmt.Errorf("send raw keys to pane %q: %w", paneID, err)
 	}
+	m.logger.Debug("sent raw keys",
+		"pane_id", paneID,
+		"keys", keys,
+	)
 
 	return nil
 }

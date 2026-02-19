@@ -33,8 +33,8 @@ import (
 )
 
 var (
-	headlessFlag    bool
-	noInstructFlag  bool
+	headlessFlag   bool
+	noInstructFlag bool
 )
 
 var startCmd = &cobra.Command{
@@ -307,6 +307,12 @@ func runWithTUI(
 					}
 
 				case tui.CmdSendMessage:
+					if !orch.IsAgentReady(cmd.AgentID) {
+						logger.Warn("send message skipped; agent not ready yet",
+							"agent_id", cmd.AgentID,
+						)
+						break
+					}
 					msg := types.Message{
 						From:      "operator",
 						To:        cmd.AgentID,

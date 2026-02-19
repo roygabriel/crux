@@ -35,6 +35,7 @@ type Assigner struct {
 	prompts    PromptProvider
 	worldState *WorldState
 	logger     *slog.Logger
+	readyGate  func(id types.AgentID) bool
 }
 
 // NewAssigner creates an Assigner with the given dependencies.
@@ -48,6 +49,12 @@ func NewAssigner(agents AgentLister, prompts PromptProvider, worldState *WorldSt
 		worldState: worldState,
 		logger:     logger,
 	}
+}
+
+// SetReadyGate configures an optional callback used to filter which idle
+// agents are currently dispatchable. If nil, all idle agents are eligible.
+func (a *Assigner) SetReadyGate(fn func(id types.AgentID) bool) {
+	a.readyGate = fn
 }
 
 // AssignNext finds the next pending prompt and assigns it to an idle agent.
@@ -126,7 +133,8 @@ func (a *Assigner) idleAgents() []*agent.AgentInstance {
 	all := a.agents.List()
 	var idle []*agent.AgentInstance
 	for _, inst := range all {
-		if inst.Agent.Status == types.StatusIdle {
+		if inst.Agent.Status == types.StatusIdle &&
+			(a.readyGate == nil || a.readyGate(inst.Agent.ID)) {
 			idle = append(idle, inst)
 		}
 	}

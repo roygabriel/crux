@@ -405,3 +405,30 @@ func TestContentPanel_AgentID(t *testing.T) {
 		t.Errorf("agentID = %q, want %q", p.agentID(), "agent-1")
 	}
 }
+
+func TestContentPanel_OutputSoftWrapPreservesLongLines(t *testing.T) {
+	p := NewContentPanel()
+	p.SetSize(10, 8)
+	snap := contentSnapshot()
+	snap.PaneContent = "ABCDEFGHIJKLMN"
+	p.SetAgent(snap)
+	p.HandleKey("o")
+
+	view := p.View()
+	if !strings.Contains(view, "ABCDEFGHIJ") {
+		t.Fatalf("expected first wrapped segment, got:\n%s", view)
+	}
+	if !strings.Contains(view, "KLMN") {
+		t.Fatalf("expected second wrapped segment, got:\n%s", view)
+	}
+}
+
+func TestWrapLine(t *testing.T) {
+	got := wrapLine("123456789", 4)
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3", len(got))
+	}
+	if got[0] != "1234" || got[1] != "5678" || got[2] != "9" {
+		t.Fatalf("unexpected wrapped output: %#v", got)
+	}
+}

@@ -71,8 +71,10 @@ type Orchestrator struct {
 
 	// paneContent stores the latest captured content per agent, guarded by mu.
 	// orchestratorPrompt holds the latest rendered orchestrator system prompt.
+	// agentReady tracks whether each agent has shown a ready prompt since spawn.
 	mu                 sync.Mutex
 	paneContent        map[types.AgentID]string
+	agentReady         map[types.AgentID]bool
 	orchestratorPrompt string
 
 	// prevStatus tracks previous agent status for transition detection.
@@ -122,29 +124,34 @@ func New(
 		30*time.Second,
 		logger,
 	)
-	return &Orchestrator{
-		cfg:          cfg,
-		worldState:   ws,
-		assigner:     NewAssigner(registry, engine, ws, logger),
-		rag:          NewDecisionRAG(j, logger),
-		conflicts:    conflicts,
-		registry:     registry,
-		engine:       engine,
-		completion:   completion,
-		contextBld:   contextBld,
-		tracker:      tracker,
-		watcher:      watcher,
-		messenger:    messenger,
-		sessionMgr:   sessionMgr,
-		workNotes:    workNotes,
-		journal:      j,
-		logger:       logger,
-		pollInterval: defaultPollInterval,
+	assigner := NewAssigner(registry, engine, ws, logger)
+
+	o := &Orchestrator{
+		cfg:              cfg,
+		worldState:       ws,
+		assigner:         assigner,
+		rag:              NewDecisionRAG(j, logger),
+		conflicts:        conflicts,
+		registry:         registry,
+		engine:           engine,
+		completion:       completion,
+		contextBld:       contextBld,
+		tracker:          tracker,
+		watcher:          watcher,
+		messenger:        messenger,
+		sessionMgr:       sessionMgr,
+		workNotes:        workNotes,
+		journal:          j,
+		logger:           logger,
+		pollInterval:     defaultPollInterval,
 		paneContent:      make(map[types.AgentID]string),
+		agentReady:       make(map[types.AgentID]bool),
 		prevStatus:       make(map[types.AgentID]types.AgentStatus),
 		lastDispatchTime: make(map[types.AgentID]time.Time),
 		dispatchGrace:    5 * time.Second,
 	}
+	assigner.SetReadyGate(o.isAgentReadyForDispatch)
+	return o
 }
 
 // SetSecurityGate configures the security gate for action checks.
@@ -309,6 +316,10 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 
 		newStatus := o.detectStatus(inst, content)
 		prev := o.prevStatus[id]
+
+		if inst.Plugin.DetectReady(content) {
+			o.markAgentReady(id)
+		}
 
 		if newStatus != prev {
 			// Suppress premature Busy→Idle transitions within the dispatch grace period.
@@ -760,6 +771,7 @@ func (o *Orchestrator) spawnAgents(ctx context.Context) error {
 			return fmt.Errorf("spawn agent %q: %w", name, err)
 		}
 		o.prevStatus[a.ID] = types.StatusIdle
+		o.setAgentReady(a.ID, false)
 	}
 	return nil
 }
@@ -775,6 +787,39 @@ func (o *Orchestrator) startWatchers(ctx context.Context) {
 			o.mu.Unlock()
 		})
 	}
+}
+
+// IsAgentReady reports whether an agent has shown a ready prompt since spawn.
+func (o *Orchestrator) IsAgentReady(id types.AgentID) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.agentReady[id]
+}
+
+func (o *Orchestrator) isAgentReadyForDispatch(id types.AgentID) bool {
+	return o.IsAgentReady(id)
+}
+
+func (o *Orchestrator) setAgentReady(id types.AgentID, ready bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.agentReady[id] = ready
+}
+
+func (o *Orchestrator) markAgentReady(id types.AgentID) {
+	changed := false
+	o.mu.Lock()
+	if !o.agentReady[id] {
+		o.agentReady[id] = true
+		changed = true
+	}
+	o.mu.Unlock()
+	if !changed {
+		return
+	}
+	o.logger.Info("agent ready for dispatch",
+		"agent_id", id,
+	)
 }
 
 // latestContent returns the most recently captured pane content for an agent.

@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -79,6 +80,11 @@ type TUIModel struct {
 	phaseCount    int
 	continueCount int
 	initialMsg    string
+
+	generating      bool   // true while generate_single_phase calls are in flight
+	genCompleted    int    // phases successfully generated so far
+	genCurrentPhase string // phase ID currently being generated (e.g. "1A")
+	genInFlight     bool   // true between a generate_single_phase ToolUseMsg and its ToolResultMsg
 
 	viewport viewport.Model
 	input    textarea.Model
@@ -170,6 +176,10 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case StreamDoneMsg:
 		m.streaming = false
+		if m.generating {
+			m.generating = false
+			m.phaseCount = m.genCompleted
+		}
 		// Finalize the assistant message with glamour rendering.
 		raw := m.streamBuf.String()
 		m.streamBuf.Reset()
@@ -223,15 +233,40 @@ func (m TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.input.Focus())
 
 	case ToolUseMsg:
-		m.messages = append(m.messages, chatMessage{
-			role:    "tool",
-			content: fmt.Sprintf("[tool: %s]", msg.Chunk.Name),
-		})
+		if msg.Chunk.Name == "generate_single_phase" {
+			var input struct {
+				ID string `json:"id"`
+			}
+			_ = json.Unmarshal(msg.Chunk.Input, &input)
+			m.generating = true
+			m.genInFlight = true
+			m.genCurrentPhase = input.ID
+			m.messages = append(m.messages, chatMessage{
+				role:    "tool",
+				content: fmt.Sprintf("[generating phase %s... (%d completed)]", input.ID, m.genCompleted),
+			})
+		} else {
+			m.messages = append(m.messages, chatMessage{
+				role:    "tool",
+				content: fmt.Sprintf("[tool: %s]", msg.Chunk.Name),
+			})
+		}
 		m.refreshViewport()
 		// Execute the tool and send the result back.
 		cmds = append(cmds, m.executeToolCmd(msg.Chunk))
 
 	case ToolResultMsg:
+		if m.generating && m.genInFlight {
+			if !msg.IsError {
+				m.genCompleted++
+			} else {
+				m.messages = append(m.messages, chatMessage{
+					role:    "error",
+					content: fmt.Sprintf("Phase %s generation failed.", m.genCurrentPhase),
+				})
+			}
+			m.genInFlight = false
+		}
 		cmds = append(cmds, m.handleToolResultCmd(msg))
 
 	case spinner.TickMsg:
@@ -279,6 +314,10 @@ func (m TUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.streamBuf.Reset()
 		m.phaseCount = 0
 		m.continueCount = 0
+		m.generating = false
+		m.genCompleted = 0
+		m.genCurrentPhase = ""
+		m.genInFlight = false
 		m.err = nil
 		m.refreshViewport()
 		return m, m.input.Focus()
@@ -424,6 +463,9 @@ func (m TUIModel) View() string {
 }
 
 func (m TUIModel) inputView() string {
+	if m.streaming && m.generating {
+		return inputBarStyle.Render(fmt.Sprintf("  %s Generating phases... (%d completed, writing %s)", m.spinner.View(), m.genCompleted, m.genCurrentPhase))
+	}
 	if m.streaming {
 		return inputBarStyle.Render(fmt.Sprintf("  %s Thinking...", m.spinner.View()))
 	}
@@ -435,7 +477,9 @@ func (m TUIModel) inputView() string {
 
 func (m TUIModel) statusBar() string {
 	left := " Planning"
-	if m.phaseCount > 0 {
+	if m.generating {
+		left += fmt.Sprintf(" | Generating: %d completed, writing %s", m.genCompleted, m.genCurrentPhase)
+	} else if m.phaseCount > 0 {
 		left += fmt.Sprintf(" | Phases: %d", m.phaseCount)
 	}
 

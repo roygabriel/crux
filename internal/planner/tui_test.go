@@ -747,3 +747,157 @@ func TestReadStreamMsg_Truncated(t *testing.T) {
 		t.Errorf("expected StreamTruncatedMsg, got %T", msg)
 	}
 }
+
+func TestTUIModel_GenerationTracking_FirstToolCall(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+
+	chunk := ToolUseChunk{
+		ID:    "tool_gen1",
+		Name:  "generate_single_phase",
+		Input: json.RawMessage(`{"id":"1A"}`),
+	}
+
+	updated, cmd := m.Update(ToolUseMsg{Chunk: chunk})
+	model := updated.(TUIModel)
+
+	if !model.generating {
+		t.Error("generating should be true after generate_single_phase ToolUseMsg")
+	}
+	if !model.genInFlight {
+		t.Error("genInFlight should be true after generate_single_phase ToolUseMsg")
+	}
+	if model.genCurrentPhase != "1A" {
+		t.Errorf("genCurrentPhase = %q, want '1A'", model.genCurrentPhase)
+	}
+	if len(model.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(model.messages))
+	}
+	if !strings.Contains(model.messages[0].content, "generating phase 1A") {
+		t.Errorf("message should contain 'generating phase 1A', got: %q", model.messages[0].content)
+	}
+	if !strings.Contains(model.messages[0].content, "0 completed") {
+		t.Errorf("message should contain '0 completed', got: %q", model.messages[0].content)
+	}
+	if cmd == nil {
+		t.Error("should return a cmd to execute the tool")
+	}
+}
+
+func TestTUIModel_GenerationTracking_ToolResult(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.generating = true
+	m.genInFlight = true
+	m.genCurrentPhase = "1A"
+
+	updated, _ := m.Update(ToolResultMsg{
+		ToolID:  "tool_gen1",
+		Result:  "ok",
+		IsError: false,
+	})
+	model := updated.(TUIModel)
+
+	if model.genCompleted != 1 {
+		t.Errorf("genCompleted = %d, want 1", model.genCompleted)
+	}
+	if model.genInFlight {
+		t.Error("genInFlight should be false after ToolResultMsg")
+	}
+}
+
+func TestTUIModel_GenerationTracking_CompletionOnDone(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.streaming = true
+	m.generating = true
+	m.genCompleted = 3
+
+	updated, _ := m.Update(StreamDoneMsg{})
+	model := updated.(TUIModel)
+
+	if model.generating {
+		t.Error("generating should be false after StreamDoneMsg")
+	}
+	if model.phaseCount != 3 {
+		t.Errorf("phaseCount = %d, want 3", model.phaseCount)
+	}
+}
+
+func TestTUIModel_GenerationTracking_NonGenToolUnaffected(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+
+	chunk := ToolUseChunk{
+		ID:    "tool_rf1",
+		Name:  "read_file",
+		Input: json.RawMessage(`{"path":"main.go"}`),
+	}
+
+	updated, _ := m.Update(ToolUseMsg{Chunk: chunk})
+	model := updated.(TUIModel)
+
+	if model.generating {
+		t.Error("generating should remain false for non-generation tool")
+	}
+	if model.genInFlight {
+		t.Error("genInFlight should remain false for non-generation tool")
+	}
+	if len(model.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(model.messages))
+	}
+	if !strings.Contains(model.messages[0].content, "[tool: read_file]") {
+		t.Errorf("message should use generic format, got: %q", model.messages[0].content)
+	}
+}
+
+func TestTUIModel_GenerationTracking_NonGenToolDuringGeneration(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.generating = true
+	m.genCompleted = 2
+	m.genInFlight = false // not in flight — a read_file result arrives
+
+	updated, _ := m.Update(ToolResultMsg{
+		ToolID:  "tool_rf1",
+		Result:  "file contents",
+		IsError: false,
+	})
+	model := updated.(TUIModel)
+
+	if model.genCompleted != 2 {
+		t.Errorf("genCompleted = %d, want 2 (should not increment for non-gen tool)", model.genCompleted)
+	}
+}
+
+func TestTUIModel_InputView_Generating(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.streaming = true
+	m.generating = true
+	m.genCompleted = 2
+	m.genCurrentPhase = "2A"
+
+	view := m.inputView()
+	if !strings.Contains(view, "Generating phases") {
+		t.Errorf("input view should show 'Generating phases', got: %q", view)
+	}
+	if !strings.Contains(view, "2 completed") {
+		t.Errorf("input view should show '2 completed', got: %q", view)
+	}
+	if !strings.Contains(view, "writing 2A") {
+		t.Errorf("input view should show 'writing 2A', got: %q", view)
+	}
+}
+
+func TestTUIModel_StatusBar_Generating(t *testing.T) {
+	m := initModel(newTestTUIModel(t))
+	m.generating = true
+	m.genCompleted = 2
+	m.genCurrentPhase = "2A"
+
+	bar := m.statusBar()
+	if !strings.Contains(bar, "Generating:") {
+		t.Errorf("status bar should contain 'Generating:', got: %q", bar)
+	}
+	if !strings.Contains(bar, "2 completed") {
+		t.Errorf("status bar should contain '2 completed', got: %q", bar)
+	}
+	if !strings.Contains(bar, "writing 2A") {
+		t.Errorf("status bar should contain 'writing 2A', got: %q", bar)
+	}
+}

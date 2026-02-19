@@ -31,6 +31,8 @@ const dispatchBackoffMax = 60 * time.Second
 const dispatchFailureThreshold = 2
 const dispatchRepeatThreshold = 3
 const cooldownLogInterval = 8 * time.Second
+const dispatchAckTimeout = 12 * time.Second
+const recoveryGuardInterval = 8 * time.Second
 
 var errDispatchCoolingDown = errors.New("dispatch cooling down")
 
@@ -44,6 +46,13 @@ type dispatchFingerprint struct {
 	promptNum  int
 	promptHash string
 	filesHash  string
+}
+
+type dispatchAckState struct {
+	key          promptKey
+	baselineHash string
+	deadline     time.Time
+	sentAt       time.Time
 }
 
 // SecurityGate checks permission before executing an action.
@@ -118,10 +127,14 @@ type Orchestrator struct {
 	// Dispatch stability tracking prevents tight re-dispatch loops when an
 	// agent repeatedly receives the same prompt without advancing progress.
 	lastDispatchFingerprint map[types.AgentID]dispatchFingerprint
+	lastDispatchPaneHash    map[types.AgentID]string
 	repeatDispatchCount     map[types.AgentID]int
 	promptFailCount         map[promptKey]int
 	promptCooldownUntil     map[promptKey]time.Time
 	promptCooldownLogAt     map[promptKey]time.Time
+	pendingDispatchAck      map[types.AgentID]dispatchAckState
+	agentRecoveryUntil      map[types.AgentID]time.Time
+	lastRecoveryAt          map[types.AgentID]time.Time
 
 	// session holds the active session context.
 	session *session.SessionContext
@@ -197,10 +210,14 @@ func New(
 		dispatchGrace:           5 * time.Second,
 		readyTimeout:            readyTimeout,
 		lastDispatchFingerprint: make(map[types.AgentID]dispatchFingerprint),
+		lastDispatchPaneHash:    make(map[types.AgentID]string),
 		repeatDispatchCount:     make(map[types.AgentID]int),
 		promptFailCount:         make(map[promptKey]int),
 		promptCooldownUntil:     make(map[promptKey]time.Time),
 		promptCooldownLogAt:     make(map[promptKey]time.Time),
+		pendingDispatchAck:      make(map[types.AgentID]dispatchAckState),
+		agentRecoveryUntil:      make(map[types.AgentID]time.Time),
+		lastRecoveryAt:          make(map[types.AgentID]time.Time),
 	}
 	assigner.SetReadyGate(o.isAgentReadyForDispatch)
 	return o
@@ -362,6 +379,10 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 	for _, inst := range agents {
 		id := inst.Agent.ID
 		content := o.latestContent(id)
+		if recovered := o.checkDispatchAck(ctx, inst, content); recovered {
+			o.prevStatus[id] = types.StatusIdle
+			continue
+		}
 		if content == "" {
 			continue
 		}
@@ -494,6 +515,9 @@ func (o *Orchestrator) handleTransition(
 		"from", prev,
 		"to", curr,
 	)
+	if curr != types.StatusBusy {
+		o.clearDispatchAck(id)
+	}
 
 	if err := o.registry.UpdateStatus(id, curr); err != nil {
 		o.logger.Warn("failed to update agent status in registry", "agent_id", id, "error", err)
@@ -576,6 +600,8 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 	output, err := inst.Plugin.ParseOutput(content)
 	if err != nil {
 		o.logger.Warn("failed to parse agent output", "agent_id", id, "error", err)
+		o.clearDispatchAck(id)
+		o.clearDispatchTracking(id)
 		o.notePromptFailure(spec.ID, prompt.PromptNumber, "parse output failed")
 		return
 	}
@@ -587,6 +613,8 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 				if err := o.security.Gate(id, inst.Agent.Permission, "shell_exec", gate.Command, spec.ID, prompt.PromptNumber); err != nil {
 					o.logger.Warn("security gate denied verification command",
 						"agent_id", id, "command", gate.Command, "error", err)
+					o.clearDispatchAck(id)
+					o.clearDispatchTracking(id)
 					o.notePromptFailure(spec.ID, prompt.PromptNumber, "security denied verification command")
 					return
 				}
@@ -596,6 +624,8 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 			if err := o.security.Gate(id, inst.Agent.Permission, "file_write", f, spec.ID, prompt.PromptNumber); err != nil {
 				o.logger.Warn("security gate denied file write",
 					"agent_id", id, "file", f, "error", err)
+				o.clearDispatchAck(id)
+				o.clearDispatchTracking(id)
 				o.notePromptFailure(spec.ID, prompt.PromptNumber, "security denied file write")
 				return
 			}
@@ -605,6 +635,8 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 	result, err := o.completion.HandleCompletion(ctx, spec.ID, prompt.PromptNumber, output)
 	if err != nil {
 		o.logger.Error("completion handling failed", "agent_id", id, "error", err)
+		o.clearDispatchAck(id)
+		o.clearDispatchTracking(id)
 		o.notePromptFailure(spec.ID, prompt.PromptNumber, "completion handling failed")
 		return
 	}
@@ -615,6 +647,7 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 			"phase", spec.ID,
 			"prompt", prompt.PromptNumber,
 		)
+		o.clearDispatchAck(id)
 		o.clearPromptFailure(spec.ID, prompt.PromptNumber)
 		o.clearDispatchTracking(id)
 		// Update world state with new phase if changed.
@@ -629,6 +662,8 @@ func (o *Orchestrator) handleCompletion(ctx context.Context, inst *agent.AgentIn
 			"phase", spec.ID,
 			"prompt", prompt.PromptNumber,
 		)
+		o.clearDispatchAck(id)
+		o.clearDispatchTracking(id)
 		o.notePromptFailure(spec.ID, prompt.PromptNumber, "verification gates failed")
 	}
 }
@@ -792,11 +827,17 @@ func (o *Orchestrator) dispatchPrompt(ctx context.Context, agentID types.AgentID
 		o.revertAssignment(agentID, err)
 		return fmt.Errorf("dispatch prompt: render: %w", err)
 	}
+	paneHash := hashString(o.latestContent(agentID))
 	fp := buildDispatchFingerprint(spec, prompt, rendered)
-	repeat := o.bumpDispatchRepeat(agentID, fp)
+	repeat := o.bumpDispatchRepeat(agentID, fp, paneHash)
 	if repeat > dispatchRepeatThreshold {
 		o.notePromptFailure(spec.ID, prompt.PromptNumber,
 			fmt.Sprintf("repeated identical dispatch x%d", repeat))
+		o.clearDispatchTracking(agentID)
+		o.clearDispatchAck(agentID)
+		if recErr := o.recoverAgent(ctx, agentID, fmt.Sprintf("repeat-dispatch-%d", repeat)); recErr != nil {
+			o.logger.Warn("agent recovery failed", "agent_id", agentID, "error", recErr)
+		}
 		o.revertAssignment(agentID, errDispatchCoolingDown)
 		return fmt.Errorf("dispatch prompt: %w", errDispatchCoolingDown)
 	}
@@ -815,6 +856,7 @@ func (o *Orchestrator) dispatchPrompt(ctx context.Context, agentID types.AgentID
 		return fmt.Errorf("dispatch prompt: send: %w", err)
 	}
 
+	o.noteDispatchAck(agentID, key, paneHash)
 	o.lastDispatchTime[agentID] = time.Now()
 	o.prevStatus[agentID] = types.StatusBusy
 
@@ -832,12 +874,18 @@ func (o *Orchestrator) revertAssignment(agentID types.AgentID, cause error) {
 		"agent_id", agentID,
 		"cause", cause,
 	)
+	o.clearDispatchAck(agentID)
 	if err := o.registry.UpdateStatus(agentID, types.StatusIdle); err != nil {
 		o.logger.Error("revert assignment: update registry", "agent_id", agentID, "error", err)
 	}
+	existing, _ := o.worldState.GetAgent(agentID)
 	o.worldState.UpdateAgent(agentID, AgentState{
-		Status:     types.StatusIdle,
-		LastActive: time.Now().UTC(),
+		Status:        types.StatusIdle,
+		PromptDisplay: existing.PromptDisplay,
+		Task:          existing.Task,
+		PhaseID:       existing.PhaseID,
+		AssignedAt:    existing.AssignedAt,
+		LastActive:    time.Now().UTC(),
 	})
 	o.prevStatus[agentID] = types.StatusIdle
 }
@@ -898,6 +946,13 @@ func (o *Orchestrator) IsAgentReady(id types.AgentID) bool {
 }
 
 func (o *Orchestrator) isAgentReadyForDispatch(id types.AgentID) bool {
+	if until, ok := o.agentRecoveryUntil[id]; ok {
+		if time.Now().Before(until) {
+			return false
+		}
+		delete(o.agentRecoveryUntil, id)
+	}
+
 	if o.IsAgentReady(id) {
 		return true
 	}
@@ -1046,6 +1101,9 @@ func (o *Orchestrator) ensureDispatchMaps() {
 	if o.lastDispatchFingerprint == nil {
 		o.lastDispatchFingerprint = make(map[types.AgentID]dispatchFingerprint)
 	}
+	if o.lastDispatchPaneHash == nil {
+		o.lastDispatchPaneHash = make(map[types.AgentID]string)
+	}
 	if o.repeatDispatchCount == nil {
 		o.repeatDispatchCount = make(map[types.AgentID]int)
 	}
@@ -1058,21 +1116,33 @@ func (o *Orchestrator) ensureDispatchMaps() {
 	if o.promptCooldownLogAt == nil {
 		o.promptCooldownLogAt = make(map[promptKey]time.Time)
 	}
+	if o.pendingDispatchAck == nil {
+		o.pendingDispatchAck = make(map[types.AgentID]dispatchAckState)
+	}
+	if o.agentRecoveryUntil == nil {
+		o.agentRecoveryUntil = make(map[types.AgentID]time.Time)
+	}
+	if o.lastRecoveryAt == nil {
+		o.lastRecoveryAt = make(map[types.AgentID]time.Time)
+	}
 }
 
 func (o *Orchestrator) clearDispatchTracking(agentID types.AgentID) {
 	o.ensureDispatchMaps()
 	delete(o.lastDispatchFingerprint, agentID)
+	delete(o.lastDispatchPaneHash, agentID)
 	delete(o.repeatDispatchCount, agentID)
 }
 
-func (o *Orchestrator) bumpDispatchRepeat(agentID types.AgentID, fp dispatchFingerprint) int {
+func (o *Orchestrator) bumpDispatchRepeat(agentID types.AgentID, fp dispatchFingerprint, paneHash string) int {
 	o.ensureDispatchMaps()
 	prev, ok := o.lastDispatchFingerprint[agentID]
-	if ok && prev == fp {
+	prevPaneHash := o.lastDispatchPaneHash[agentID]
+	if ok && prev == fp && prevPaneHash == paneHash {
 		o.repeatDispatchCount[agentID]++
 	} else {
 		o.lastDispatchFingerprint[agentID] = fp
+		o.lastDispatchPaneHash[agentID] = paneHash
 		o.repeatDispatchCount[agentID] = 1
 	}
 	return o.repeatDispatchCount[agentID]
@@ -1085,11 +1155,113 @@ func (o *Orchestrator) promptCooldown(key promptKey) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	if time.Now().After(until) {
+		delete(o.promptFailCount, key)
 		delete(o.promptCooldownUntil, key)
 		delete(o.promptCooldownLogAt, key)
 		return time.Time{}, false
 	}
 	return until, true
+}
+
+func (o *Orchestrator) noteDispatchAck(agentID types.AgentID, key promptKey, baselineHash string) {
+	o.ensureDispatchMaps()
+	now := time.Now()
+	o.pendingDispatchAck[agentID] = dispatchAckState{
+		key:          key,
+		baselineHash: baselineHash,
+		sentAt:       now,
+		deadline:     now.Add(dispatchAckTimeout),
+	}
+}
+
+func (o *Orchestrator) clearDispatchAck(agentID types.AgentID) {
+	o.ensureDispatchMaps()
+	delete(o.pendingDispatchAck, agentID)
+}
+
+func (o *Orchestrator) checkDispatchAck(ctx context.Context, inst *agent.AgentInstance, content string) bool {
+	o.ensureDispatchMaps()
+	ack, ok := o.pendingDispatchAck[inst.Agent.ID]
+	if !ok {
+		return false
+	}
+
+	currentHash := hashString(content)
+	if currentHash != ack.baselineHash {
+		delete(o.pendingDispatchAck, inst.Agent.ID)
+		return false
+	}
+
+	if time.Now().Before(ack.deadline) {
+		return false
+	}
+
+	o.logger.Warn("dispatch ack timeout",
+		"agent_id", inst.Agent.ID,
+		"phase", ack.key.phaseID,
+		"prompt", ack.key.promptNum,
+		"waited", time.Since(ack.sentAt).Round(time.Second),
+	)
+	o.notePromptFailure(ack.key.phaseID, ack.key.promptNum, "dispatch ack timeout")
+	o.clearDispatchTracking(inst.Agent.ID)
+	o.clearDispatchAck(inst.Agent.ID)
+	if err := o.recoverAgent(ctx, inst.Agent.ID, "dispatch-ack-timeout"); err != nil {
+		o.logger.Warn("agent recovery failed after ack timeout",
+			"agent_id", inst.Agent.ID,
+			"error", err,
+		)
+	}
+	o.revertAssignment(inst.Agent.ID, fmt.Errorf("dispatch ack timeout"))
+	return true
+}
+
+func (o *Orchestrator) recoverAgent(ctx context.Context, agentID types.AgentID, reason string) error {
+	o.ensureDispatchMaps()
+	now := time.Now()
+	if last, ok := o.lastRecoveryAt[agentID]; ok && now.Sub(last) < recoveryGuardInterval {
+		return nil
+	}
+
+	if err := o.registry.Restart(ctx, agentID); err != nil {
+		return err
+	}
+
+	o.lastRecoveryAt[agentID] = now
+	hold := o.readyTimeout
+	if hold < 5*time.Second {
+		hold = 5 * time.Second
+	}
+	if hold > 45*time.Second {
+		hold = 45 * time.Second
+	}
+	o.agentRecoveryUntil[agentID] = now.Add(hold)
+
+	o.mu.Lock()
+	o.paneContent[agentID] = ""
+	o.firstContentAt[agentID] = time.Time{}
+	o.agentReady[agentID] = false
+	o.fallbackReadyLog[agentID] = false
+	o.mu.Unlock()
+
+	_ = o.registry.UpdateStatus(agentID, types.StatusIdle)
+
+	existing, _ := o.worldState.GetAgent(agentID)
+	o.worldState.UpdateAgent(agentID, AgentState{
+		Status:        types.StatusIdle,
+		PromptDisplay: existing.PromptDisplay,
+		Task:          existing.Task,
+		PhaseID:       existing.PhaseID,
+		AssignedAt:    existing.AssignedAt,
+		LastActive:    time.Now().UTC(),
+	})
+	o.prevStatus[agentID] = types.StatusIdle
+
+	o.logger.Warn("agent recovered via in-pane restart",
+		"agent_id", agentID,
+		"reason", reason,
+		"hold_for", hold.Round(time.Second),
+	)
+	return nil
 }
 
 func (o *Orchestrator) cooldownDuration(failureCount int) time.Duration {

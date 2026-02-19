@@ -439,6 +439,73 @@ func TestPaneManagerSendKeys(t *testing.T) {
 	}
 }
 
+func TestPaneManagerRespawn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		paneID  string
+		command string
+		runFunc func(ctx context.Context, args ...string) (string, error)
+		wantErr bool
+	}{
+		{
+			name:    "success",
+			paneID:  "%3",
+			command: "codex --full-auto",
+			runFunc: func(_ context.Context, args ...string) (string, error) {
+				if len(args) != 5 {
+					t.Fatalf("unexpected args len %d: %v", len(args), args)
+				}
+				if args[0] != "respawn-pane" {
+					t.Fatalf("expected respawn-pane, got %q", args[0])
+				}
+				if args[1] != "-k" || args[2] != "-t" || args[3] != "%3" {
+					t.Fatalf("unexpected respawn args: %v", args)
+				}
+				if args[4] != "codex --full-auto" {
+					t.Fatalf("unexpected command arg: %q", args[4])
+				}
+				return "", nil
+			},
+		},
+		{
+			name:    "empty-pane-id",
+			paneID:  "",
+			command: "echo hi",
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:    "empty-command",
+			paneID:  "%3",
+			command: "   ",
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:    "commander-error",
+			paneID:  "%3",
+			command: "echo hi",
+			runFunc: func(_ context.Context, _ ...string) (string, error) {
+				return "", errors.New("pane not found")
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pm := NewPaneManager(&mockCommander{runFunc: tt.runFunc}, newTestLogger())
+			err := pm.Respawn(context.Background(), tt.paneID, tt.command)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Respawn(%q, %q) error=%v wantErr=%v", tt.paneID, tt.command, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestPaneManagerSendKeysLiteral(t *testing.T) {
 	t.Parallel()
 

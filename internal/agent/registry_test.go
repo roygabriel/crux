@@ -37,14 +37,18 @@ func (s *stubPlugin) LaunchCmd(cfg plugin.AgentConfig) (string, []string, error)
 	return "stubcli", []string{"--agent", string(cfg.ID)}, nil
 }
 
-func (s *stubPlugin) DetectReady(_ string) bool                              { return false }
-func (s *stubPlugin) DetectBusy(_ string) bool                               { return false }
-func (s *stubPlugin) DetectError(_ string) (string, bool)                    { return "", false }
-func (s *stubPlugin) DetectRateLimit(_ string) (time.Duration, bool)         { return 0, false }
-func (s *stubPlugin) DetectPrompt(_ string) (plugin.PromptResponse, bool)    { return plugin.PromptResponse{}, false }
-func (s *stubPlugin) FormatMessage(_ types.Message) string                   { return "" }
-func (s *stubPlugin) ParseOutput(_ string) (plugin.AgentOutput, error)   { return plugin.AgentOutput{}, nil }
-func (s *stubPlugin) Capabilities() []plugin.Capability                  { return nil }
+func (s *stubPlugin) DetectReady(_ string) bool                      { return false }
+func (s *stubPlugin) DetectBusy(_ string) bool                       { return false }
+func (s *stubPlugin) DetectError(_ string) (string, bool)            { return "", false }
+func (s *stubPlugin) DetectRateLimit(_ string) (time.Duration, bool) { return 0, false }
+func (s *stubPlugin) DetectPrompt(_ string) (plugin.PromptResponse, bool) {
+	return plugin.PromptResponse{}, false
+}
+func (s *stubPlugin) FormatMessage(_ types.Message) string { return "" }
+func (s *stubPlugin) ParseOutput(_ string) (plugin.AgentOutput, error) {
+	return plugin.AgentOutput{}, nil
+}
+func (s *stubPlugin) Capabilities() []plugin.Capability { return nil }
 
 func newTestLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -367,6 +371,106 @@ func TestRegistryKill(t *testing.T) {
 	_, err := reg.Get("agent-1")
 	if !errors.Is(err, agent.ErrAgentNotFound) {
 		t.Errorf("agent should be removed after kill, Get error = %v", err)
+	}
+}
+
+func TestRegistryRestart(t *testing.T) {
+	t.Parallel()
+
+	var respawnCalled bool
+	var respawnArgs []string
+	cmd := &mockCommander{fn: func(_ context.Context, args ...string) (string, error) {
+		if len(args) == 0 {
+			return "", nil
+		}
+		switch args[0] {
+		case "split-window":
+			return "%1", nil
+		case "send-keys":
+			return "", nil
+		case "respawn-pane":
+			respawnCalled = true
+			respawnArgs = append([]string(nil), args...)
+			return "", nil
+		}
+		return "", nil
+	}}
+
+	reg := newTestRegistry(cmd)
+	ctx := context.Background()
+	if err := reg.Spawn(ctx, validAgent("agent-1")); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	before, err := reg.Get("agent-1")
+	if err != nil {
+		t.Fatalf("Get(before): %v", err)
+	}
+	beforeLaunch := before.LaunchedAt
+
+	time.Sleep(2 * time.Millisecond)
+	if err := reg.Restart(ctx, "agent-1"); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if !respawnCalled {
+		t.Fatal("expected respawn-pane to be called")
+	}
+	if len(respawnArgs) < 5 {
+		t.Fatalf("unexpected respawn args: %v", respawnArgs)
+	}
+	if respawnArgs[1] != "-k" || respawnArgs[2] != "-t" || respawnArgs[3] != "%1" {
+		t.Fatalf("unexpected respawn args: %v", respawnArgs)
+	}
+
+	after, err := reg.Get("agent-1")
+	if err != nil {
+		t.Fatalf("Get(after): %v", err)
+	}
+	if !after.LaunchedAt.After(beforeLaunch) {
+		t.Fatalf("expected LaunchedAt to advance: before=%v after=%v", beforeLaunch, after.LaunchedAt)
+	}
+	if after.Agent.Status != types.StatusIdle {
+		t.Fatalf("status after restart = %q, want %q", after.Agent.Status, types.StatusIdle)
+	}
+}
+
+func TestRegistryRestartNotFound(t *testing.T) {
+	t.Parallel()
+
+	reg := newTestRegistry(successCommander("%1"))
+	err := reg.Restart(context.Background(), "missing")
+	if err == nil {
+		t.Fatal("Restart: expected error for missing agent")
+	}
+	if !errors.Is(err, agent.ErrAgentNotFound) {
+		t.Fatalf("error = %v, want wrapping %v", err, agent.ErrAgentNotFound)
+	}
+}
+
+func TestRegistryRestartRespawnFailure(t *testing.T) {
+	t.Parallel()
+
+	cmd := &mockCommander{fn: func(_ context.Context, args ...string) (string, error) {
+		if len(args) == 0 {
+			return "", nil
+		}
+		switch args[0] {
+		case "split-window":
+			return "%1", nil
+		case "send-keys":
+			return "", nil
+		case "respawn-pane":
+			return "", errors.New("respawn failed")
+		}
+		return "", nil
+	}}
+	reg := newTestRegistry(cmd)
+	ctx := context.Background()
+	if err := reg.Spawn(ctx, validAgent("agent-1")); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if err := reg.Restart(ctx, "agent-1"); err == nil {
+		t.Fatal("Restart: expected error from respawn-pane")
 	}
 }
 

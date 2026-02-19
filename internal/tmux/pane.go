@@ -184,6 +184,27 @@ func (m *PaneManager) Kill(ctx context.Context, paneID string) error {
 	return nil
 }
 
+// Respawn kills the current process in the pane and starts command in-place.
+// The pane ID remains stable, so existing watchers can continue polling.
+func (m *PaneManager) Respawn(ctx context.Context, paneID, command string) error {
+	if paneID == "" {
+		return fmt.Errorf("pane ID must not be empty")
+	}
+	if strings.TrimSpace(command) == "" {
+		return fmt.Errorf("command must not be empty")
+	}
+
+	if _, err := m.cmd.Run(ctx, "respawn-pane", "-k", "-t", paneID, command); err != nil {
+		return fmt.Errorf("respawn pane %q: %w", paneID, err)
+	}
+
+	m.logger.Info("respawned tmux pane",
+		"pane_id", paneID,
+		"command", command,
+	)
+	return nil
+}
+
 // parsePaneList parses the output of list-panes with format
 // "#{pane_id}:#{pane_pid}:#{pane_current_command}" into PaneInfo slices.
 // It uses SplitN with limit 3 to preserve colons in command names.

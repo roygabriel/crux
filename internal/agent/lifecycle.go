@@ -123,6 +123,48 @@ func (r *Registry) Kill(ctx context.Context, id types.AgentID) error {
 	return nil
 }
 
+// Restart relaunches an existing agent in its current tmux pane.
+// The pane ID remains stable so watchers and TUI bindings do not break.
+func (r *Registry) Restart(ctx context.Context, id types.AgentID) error {
+	r.mu.Lock()
+	inst, exists := r.instances[id]
+	if !exists {
+		r.mu.Unlock()
+		return fmt.Errorf("restart agent %q: %w", id, ErrAgentNotFound)
+	}
+
+	pluginCfg := plugin.AgentConfig{
+		ID:         inst.Agent.ID,
+		WorkDir:    ".",
+		Permission: inst.Agent.Permission,
+	}
+	bin, args, err := inst.Plugin.LaunchCmd(pluginCfg)
+	if err != nil {
+		r.mu.Unlock()
+		return fmt.Errorf("restart agent %q: launch command: %w", id, err)
+	}
+	cmd := formatCmd(bin, args)
+	paneID := inst.Agent.PaneID
+	r.mu.Unlock()
+
+	if err := r.pm.Respawn(ctx, paneID, cmd); err != nil {
+		return fmt.Errorf("restart agent %q: %w", id, err)
+	}
+
+	r.mu.Lock()
+	inst, exists = r.instances[id]
+	if !exists {
+		r.mu.Unlock()
+		return fmt.Errorf("restart agent %q: %w", id, ErrAgentNotFound)
+	}
+	inst.Agent.Status = types.StatusIdle
+	inst.LaunchedAt = time.Now()
+	r.mu.Unlock()
+
+	r.logger.Info("restarted agent", "agent_id", id, "pane_id", paneID)
+	return nil
+}
+
 // formatCmd joins a binary name and its arguments into a single
 // command string suitable for tmux send-keys.
 func formatCmd(bin string, args []string) string {

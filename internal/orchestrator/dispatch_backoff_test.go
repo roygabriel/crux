@@ -55,14 +55,26 @@ func TestBumpDispatchRepeat(t *testing.T) {
 	fp := dispatchFingerprint{phaseID: "1A", promptNum: 1, promptHash: "a", filesHash: "f"}
 	fp2 := dispatchFingerprint{phaseID: "1A", promptNum: 2, promptHash: "b", filesHash: "f2"}
 
-	if got := o.bumpDispatchRepeat("engineer-1", fp); got != 1 {
+	if got := o.bumpDispatchRepeat("engineer-1", fp, "pane-a"); got != 1 {
 		t.Fatalf("repeat count #1 = %d, want 1", got)
 	}
-	if got := o.bumpDispatchRepeat("engineer-1", fp); got != 2 {
+	if got := o.bumpDispatchRepeat("engineer-1", fp, "pane-a"); got != 2 {
 		t.Fatalf("repeat count #2 = %d, want 2", got)
 	}
-	if got := o.bumpDispatchRepeat("engineer-1", fp2); got != 1 {
+	if got := o.bumpDispatchRepeat("engineer-1", fp2, "pane-b"); got != 1 {
 		t.Fatalf("repeat count after fingerprint change = %d, want 1", got)
+	}
+}
+
+func TestBumpDispatchRepeat_ResetsOnPaneProgress(t *testing.T) {
+	o := &Orchestrator{logger: slog.Default()}
+	fp := dispatchFingerprint{phaseID: "1A", promptNum: 1, promptHash: "a", filesHash: "f"}
+
+	if got := o.bumpDispatchRepeat("engineer-1", fp, "pane-a"); got != 1 {
+		t.Fatalf("repeat count #1 = %d, want 1", got)
+	}
+	if got := o.bumpDispatchRepeat("engineer-1", fp, "pane-b"); got != 1 {
+		t.Fatalf("repeat count after pane progress = %d, want 1", got)
 	}
 }
 
@@ -86,5 +98,21 @@ func TestBuildDispatchFingerprintStableFileOrder(t *testing.T) {
 	b := buildDispatchFingerprint(specB, prompt, "rendered")
 	if a != b {
 		t.Fatalf("fingerprints differ: %#v != %#v", a, b)
+	}
+}
+
+func TestPromptCooldownExpiryClearsFailureCount(t *testing.T) {
+	o := &Orchestrator{logger: slog.Default()}
+	key := makePromptKey("3A", 4)
+	o.ensureDispatchMaps()
+	o.promptFailCount[key] = 9
+	o.promptCooldownUntil[key] = time.Now().Add(-time.Second)
+	o.promptCooldownLogAt[key] = time.Now().Add(-time.Second)
+
+	if _, cooling := o.promptCooldown(key); cooling {
+		t.Fatal("promptCooldown should have expired")
+	}
+	if _, ok := o.promptFailCount[key]; ok {
+		t.Fatal("failure count should be cleared after cooldown expiry")
 	}
 }

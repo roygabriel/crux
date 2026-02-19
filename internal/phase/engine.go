@@ -240,6 +240,71 @@ func (e *Engine) ValidateParallelism(phases []types.PhaseID) error {
 // PhaseOrder returns the topologically sorted phase IDs.
 func (e *Engine) PhaseOrder() []types.PhaseID { return e.topoOrder }
 
+// SetPosition updates in-memory prompt progress to a verified phase/prompt
+// cursor (1-based prompt number). A prompt value of 0 means the phase is
+// fully complete. All earlier phases are marked complete, all later phases are
+// reset to 0 progress.
+func (e *Engine) SetPosition(phaseID types.PhaseID, promptNum int) error {
+	if len(e.topoOrder) == 0 {
+		return fmt.Errorf("set position: no phases loaded")
+	}
+
+	phaseIndex := -1
+	if phaseID != "" {
+		for i, id := range e.topoOrder {
+			if id == phaseID {
+				phaseIndex = i
+				break
+			}
+		}
+		if phaseIndex < 0 {
+			return fmt.Errorf("set position: unknown phase %s: %w", phaseID, types.ErrNotFound)
+		}
+	}
+
+	if phaseIndex < 0 {
+		for _, id := range e.topoOrder {
+			if prog := e.progress[id]; prog != nil {
+				prog.CompletedPrompts = 0
+				prog.GatesPassed = 0
+			}
+		}
+		return nil
+	}
+
+	targetTotal := len(e.prompts[phaseID])
+	completedInTarget := promptNum - 1
+	if promptNum <= 0 {
+		completedInTarget = targetTotal
+	}
+	if completedInTarget < 0 {
+		completedInTarget = 0
+	}
+	if completedInTarget > targetTotal {
+		completedInTarget = targetTotal
+	}
+
+	for i, id := range e.topoOrder {
+		prog := e.progress[id]
+		if prog == nil {
+			continue
+		}
+		total := len(e.prompts[id])
+		switch {
+		case i < phaseIndex:
+			prog.CompletedPrompts = total
+		case i == phaseIndex:
+			prog.CompletedPrompts = completedInTarget
+		default:
+			prog.CompletedPrompts = 0
+		}
+		if prog.GatesPassed > prog.GatesTotal {
+			prog.GatesPassed = prog.GatesTotal
+		}
+	}
+	return nil
+}
+
 // Progress returns the current progress map for all loaded phases.
 func (e *Engine) Progress() map[types.PhaseID]PhaseProgress {
 	result := make(map[types.PhaseID]PhaseProgress, len(e.progress))

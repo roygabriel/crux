@@ -40,22 +40,23 @@ type panelLayout struct {
 
 // Model is the top-level bubbletea model for the TUI dashboard.
 type Model struct {
-	bridge       *StateBridge
-	logBridge    *LogBridge
-	commandBus   *CommandBus
-	theme        chrome.Theme
-	state        StateUpdate
-	activePanel  Panel
-	sidebar      SidebarPanel
-	contentPanel ContentPanel
-	logsPanel    LogsPanel
-	helpOverlay  HelpOverlay
-	confirmForce bool
-	compact      bool
-	width        int
-	height       int
-	ready        bool
-	startedAt    time.Time
+	bridge          *StateBridge
+	logBridge       *LogBridge
+	commandBus      *CommandBus
+	theme           chrome.Theme
+	state           StateUpdate
+	activePanel     Panel
+	sidebar         SidebarPanel
+	contentPanel    ContentPanel
+	logsPanel       LogsPanel
+	helpOverlay     HelpOverlay
+	confirmForce    bool
+	compact         bool
+	width           int
+	height          int
+	ready           bool
+	startedAt       time.Time
+	detachRequested bool
 }
 
 // NewModel creates a new TUI model connected to the given state, log, and
@@ -88,9 +89,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 
-		// Priority 1: quit always works.
+		// Priority 1: quit/detach always works.
 		switch key {
-		case "q", "ctrl+c":
+		case "q":
+			m.detachRequested = true
+			return m, tea.Quit
+		case "ctrl+c":
 			if m.commandBus != nil {
 				m.commandBus.Send(Command{Type: CmdShutdown})
 			}
@@ -419,7 +423,8 @@ func (m Model) renderLegend() string {
 	}
 
 	items := []chrome.LegendItem{
-		{Key: "q", Action: "quit"},
+		{Key: "q", Action: "detach ui"},
+		{Key: "ctrl+c", Action: "shutdown"},
 		{Key: "?", Action: "help"},
 		{Key: "tab/shift+tab", Action: "focus"},
 	}
@@ -455,6 +460,11 @@ func (m Model) renderLegend() string {
 		scope = "logs"
 	}
 	return m.theme.RenderLegend(m.width, scope, items)
+}
+
+// DetachRequested reports whether the operator exited the TUI in detach mode.
+func (m Model) DetachRequested() bool {
+	return m.detachRequested
 }
 
 func max(a, b int) int {

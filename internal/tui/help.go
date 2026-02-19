@@ -66,7 +66,8 @@ func (h *HelpOverlay) View() string {
 		{
 			title: "Global",
 			keys: [][2]string{
-				{"q", "Quit"},
+				{"q", "Detach TUI"},
+				{"ctrl+c", "Shutdown"},
 				{"?", "Toggle help"},
 				{"tab / shift+tab", "Cycle panel focus"},
 			},

@@ -292,6 +292,31 @@ func TestAssignNext_NoPrompt(t *testing.T) {
 	}
 }
 
+func TestAssignNext_PromptGateBlocksPrompt(t *testing.T) {
+	idleAgent := makeInstance("claude-1", types.StatusIdle, []plugin.Capability{plugin.CapCodeGen})
+	lister := &mockAgentLister{instances: []*agent.AgentInstance{idleAgent}}
+	provider := &mockPromptProvider{
+		phase:  &phase.PhaseSpec{ID: "1A", Name: "Foundation"},
+		prompt: &phase.PromptContract{PromptNumber: 1, Task: "create types"},
+	}
+	ws := orchestrator.NewWorldState("sess-1")
+	assigner := orchestrator.NewAssigner(lister, provider, ws, nil)
+	assigner.SetPromptGate(func(phaseID types.PhaseID, promptNum int) bool {
+		return false
+	})
+
+	agentID, err := assigner.AssignNext(context.Background())
+	if !errors.Is(err, orchestrator.ErrNoAvailableAgent) {
+		t.Fatalf("AssignNext() error = %v, want ErrNoAvailableAgent", err)
+	}
+	if agentID != "" {
+		t.Fatalf("AssignNext() agentID = %q, want empty", agentID)
+	}
+	if lister.updateCalled {
+		t.Fatal("UpdateStatus should not be called when prompt gate blocks")
+	}
+}
+
 func TestAssignToAgent(t *testing.T) {
 	idleAgent := makeInstance("claude-1", types.StatusIdle, []plugin.Capability{plugin.CapCodeGen})
 	lister := &mockAgentLister{instances: []*agent.AgentInstance{idleAgent}}

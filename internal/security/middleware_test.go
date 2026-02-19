@@ -252,6 +252,76 @@ func TestGate_NoRateLimiterPassthrough(t *testing.T) {
 	}
 }
 
+func TestGateDispatch_AllowsControlPlaneDispatch(t *testing.T) {
+	t.Parallel()
+	mw, _, auditPath := newTestMiddleware(t)
+
+	if err := mw.GateDispatch("agent-1", types.PermStandard, "task"); err != nil {
+		t.Fatalf("GateDispatch: %v", err)
+	}
+
+	entries := readAuditEntries(t, auditPath)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 legacy audit entry, got %d", len(entries))
+	}
+	if entries[0].Action != ActionMessageSend {
+		t.Fatalf("action = %q, want %q", entries[0].Action, ActionMessageSend)
+	}
+	if !entries[0].Allowed {
+		t.Fatal("expected allowed control-plane dispatch")
+	}
+}
+
+func TestGateMessage_UnknownAction_FailOpenWithAuditSignal(t *testing.T) {
+	t.Parallel()
+	mw, _, auditPath := newTestMiddleware(t)
+
+	if err := mw.GateMessage("agent-1", types.PermStandard, "message.send.v2", "task"); err != nil {
+		t.Fatalf("GateMessage: %v", err)
+	}
+
+	entries := readAuditEntries(t, auditPath)
+	if len(entries) < 2 {
+		t.Fatalf("expected at least 2 legacy audit entries, got %d", len(entries))
+	}
+	foundFailOpen := false
+	for _, e := range entries {
+		if e.Reason == "fail-open control-plane action normalization" && e.Allowed {
+			foundFailOpen = true
+			break
+		}
+	}
+	if !foundFailOpen {
+		t.Fatal("expected fail-open legacy audit marker")
+	}
+
+	events := readAuditEventMaps(t, auditPath)
+	foundPolicy := false
+	for _, ev := range events {
+		md, ok := ev["metadata"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if md["policy"] == "fail_open_control_plane" && md["reason"] == "unknown_action_type" {
+			foundPolicy = true
+			break
+		}
+	}
+	if !foundPolicy {
+		t.Fatal("expected fail_open_control_plane metadata in audit events")
+	}
+}
+
+func TestGateString_UnknownAction_FailClosed(t *testing.T) {
+	t.Parallel()
+	mw, _, _ := newTestMiddleware(t)
+
+	err := mw.GateString("agent-1", types.PermAutonomous, "definitely_unknown_action", "task", "", 0)
+	if !errors.Is(err, types.ErrPermissionDenied) {
+		t.Fatalf("expected ErrPermissionDenied, got %v", err)
+	}
+}
+
 func readAuditEntries(t *testing.T, path string) []AuditEntry {
 	t.Helper()
 	f, err := os.Open(path)
@@ -267,6 +337,13 @@ func readAuditEntries(t *testing.T, path string) []AuditEntry {
 		if line == "" {
 			continue
 		}
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			t.Fatalf("invalid JSON in audit log: %v", err)
+		}
+		if _, isEvent := raw["event_type"]; isEvent {
+			continue
+		}
 		var e AuditEntry
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
 			t.Fatalf("invalid JSON in audit log: %v", err)
@@ -274,4 +351,30 @@ func readAuditEntries(t *testing.T, path string) []AuditEntry {
 		entries = append(entries, e)
 	}
 	return entries
+}
+
+func readAuditEventMaps(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	var out []map[string]any
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			t.Fatalf("invalid JSON in audit log: %v", err)
+		}
+		if _, isEvent := raw["event_type"]; isEvent {
+			out = append(out, raw)
+		}
+	}
+	return out
 }

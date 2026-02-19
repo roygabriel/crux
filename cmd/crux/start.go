@@ -25,6 +25,7 @@ import (
 	"github.com/roygabriel/crux/internal/phase"
 	"github.com/roygabriel/crux/internal/plugin"
 	"github.com/roygabriel/crux/internal/pluginloader"
+	"github.com/roygabriel/crux/internal/runner"
 	"github.com/roygabriel/crux/internal/security"
 	"github.com/roygabriel/crux/internal/tmux"
 	"github.com/roygabriel/crux/internal/tui"
@@ -93,6 +94,7 @@ var startCmd = &cobra.Command{
 
 		// Agent registry and messenger.
 		registry := agent.NewRegistry(sm, pm, pluginReg, log)
+		registry.SetOutputLogDir(filepath.Join(cfg.Project.StateDir, "agent-logs"))
 		messenger := agent.NewMessenger(pm, registry, log)
 
 		// Tmux watcher.
@@ -137,6 +139,44 @@ var startCmd = &cobra.Command{
 		// Session manager.
 		sessDir := filepath.Join(cfg.Project.StateDir, "sessions")
 		sessionMgr := session.NewManager(sessDir, st, log)
+
+		// Startup reconciliation: verify persisted cursor against real repo state.
+		reconciler := orchestrator.NewSessionReconciler(engine, gateRunner, sessionMgr, j, log)
+		reconcileResult, recErr := reconciler.Reconcile(context.Background(), cfg.Project.Root)
+		resumePhase, resumePrompt, fromScratch, reason := decideStartupCursor(recErr, reconcileResult, engine.PhaseOrder(), engine.Progress())
+		if err := engine.SetPosition(resumePhase, resumePrompt); err != nil {
+			return fmt.Errorf("apply startup cursor position: %w", err)
+		}
+		if fromScratch {
+			log.Warn("startup resume uncertainty; forcing full re-verification from phase 1",
+				"reason", reason,
+				"phase", resumePhase,
+				"prompt", resumePrompt,
+			)
+			fmt.Printf("WARNING: Resume state uncertain (%s). Restarting from %s:%d and re-verifying all phases.\n",
+				reason, resumePhase, resumePrompt)
+		} else {
+			log.Info("startup reconciliation verified cursor",
+				"phase", resumePhase,
+				"prompt", resumePrompt,
+			)
+		}
+		if recErr != nil {
+			log.Warn("startup session reconciliation failed", "error", recErr)
+		}
+		if reconcileResult != nil && reconcileResult.RolledBack {
+			log.Warn(
+				"session state inconsistency detected; cursor rolled back",
+				"claimed_phase", reconcileResult.ClaimedPhase,
+				"claimed_prompt", reconcileResult.ClaimedPrompt,
+				"verified_phase", reconcileResult.VerifiedPhase,
+				"verified_prompt", reconcileResult.VerifiedPrompt,
+			)
+			fmt.Printf("WARNING: Session state inconsistency detected. Rolled back from %s:%d to %s:%d. See decision journal for details.\n",
+				reconcileResult.ClaimedPhase, reconcileResult.ClaimedPrompt,
+				reconcileResult.VerifiedPhase, reconcileResult.VerifiedPrompt,
+			)
+		}
 
 		// Security middleware.
 		sandbox, err := security.NewSandbox(cfg.Project.Root, cfg.Security.AllowedPaths, cfg.Security.DeniedPaths, log)
@@ -189,6 +229,9 @@ var startCmd = &cobra.Command{
 			cfg, registry, engine, completion, contextBld, tracker,
 			watcher, messenger, sessionMgr, notesMgr, j, log,
 		)
+		runners := runner.NewRegistry(log)
+		runners.Register("codex", runner.NewCodexExecRunner(log))
+		orch.SetRunnerRegistry(runners)
 		orch.SetSecurityGate(&securityAdapter{mw: secMiddleware})
 		orch.SetTmuxSessionManager(sm)
 
@@ -211,6 +254,67 @@ var startCmd = &cobra.Command{
 func init() {
 	startCmd.Flags().BoolVar(&headlessFlag, "headless", false, "Run without the terminal dashboard (for CI/scripting)")
 	startCmd.Flags().BoolVar(&noInstructFlag, "no-instruct", false, "Skip instruction file generation on start")
+}
+
+func decideStartupCursor(
+	recErr error,
+	reconcileResult *orchestrator.ReconcileResult,
+	phaseOrder []types.PhaseID,
+	progress map[types.PhaseID]phase.PhaseProgress,
+) (phaseID types.PhaseID, promptNum int, fromScratch bool, reason string) {
+	fallbackPhase, fallbackPrompt := firstPhasePromptCursor(phaseOrder, progress)
+	if len(phaseOrder) == 0 {
+		return "", 0, true, "no_phases_loaded"
+	}
+	if recErr != nil {
+		return fallbackPhase, fallbackPrompt, true, "reconciliation_error"
+	}
+	if reconcileResult == nil {
+		return fallbackPhase, fallbackPrompt, true, "missing_reconciliation_result"
+	}
+	if reconcileResult.VerifiedPhase == "" {
+		return fallbackPhase, fallbackPrompt, true, "missing_verified_cursor"
+	}
+	if !phaseInOrder(phaseOrder, reconcileResult.VerifiedPhase) {
+		return fallbackPhase, fallbackPrompt, true, "unknown_verified_phase"
+	}
+
+	totalPrompts := len(progress[reconcileResult.VerifiedPhase].Prompts)
+	if reconcileResult.VerifiedPrompt < 0 {
+		return fallbackPhase, fallbackPrompt, true, "invalid_verified_prompt"
+	}
+	if reconcileResult.VerifiedPrompt > 0 && reconcileResult.VerifiedPrompt > totalPrompts {
+		return fallbackPhase, fallbackPrompt, true, "invalid_verified_prompt"
+	}
+	if totalPrompts == 0 && reconcileResult.VerifiedPrompt != 0 {
+		return fallbackPhase, fallbackPrompt, true, "invalid_verified_prompt"
+	}
+
+	return reconcileResult.VerifiedPhase, reconcileResult.VerifiedPrompt, false, "verified_cursor"
+}
+
+func firstPhasePromptCursor(
+	phaseOrder []types.PhaseID,
+	progress map[types.PhaseID]phase.PhaseProgress,
+) (types.PhaseID, int) {
+	for _, id := range phaseOrder {
+		if len(progress[id].Prompts) > 0 {
+			return id, 1
+		}
+	}
+	if len(phaseOrder) == 0 {
+		return "", 0
+	}
+	return phaseOrder[0], 0
+}
+
+func phaseInOrder(order []types.PhaseID, phaseID types.PhaseID) bool {
+	for _, id := range order {
+		if id == phaseID {
+			return true
+		}
+	}
+	return false
 }
 
 // validateGitRepo checks that root is inside a git work tree with at least
@@ -406,9 +510,27 @@ func runWithTUI(
 	// Run TUI in foreground (blocks).
 	model := tui.NewModel(bridge, logBridge, commandBus)
 	p := tea.NewProgram(model, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		stop()
 		return fmt.Errorf("tui: %w", err)
+	}
+
+	// Detach mode: keep orchestrator running after UI exits.
+	detached := false
+	if model, ok := finalModel.(tui.Model); ok {
+		detached = model.DetachRequested()
+	}
+	if detached {
+		logger.Info("tui detached; orchestrator remains active")
+		fmt.Println("TUI detached. Orchestrator still running in this terminal. Press Ctrl+C to stop.")
+
+		if err := <-orchErr; err != nil {
+			if ctx.Err() == nil {
+				return fmt.Errorf("orchestrator: %w", err)
+			}
+		}
+		return nil
 	}
 
 	// TUI exited — shut down orchestrator.
@@ -429,6 +551,10 @@ type securityAdapter struct {
 
 func (a *securityAdapter) Gate(agentID types.AgentID, perm types.Permission, action, target string, phaseID types.PhaseID, promptNum int) error {
 	return a.mw.GateString(agentID, perm, action, target, phaseID, promptNum)
+}
+
+func (a *securityAdapter) EmitEffectConfirmed(agentID types.AgentID, action, target string, phaseID types.PhaseID, promptNum int, metadata map[string]string) error {
+	return a.mw.EmitEffectConfirmed(agentID, action, target, phaseID, promptNum, metadata)
 }
 
 // ensureInstructionFiles generates missing instruction files or refreshes

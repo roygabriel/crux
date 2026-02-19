@@ -36,6 +36,7 @@ type Assigner struct {
 	worldState *WorldState
 	logger     *slog.Logger
 	readyGate  func(id types.AgentID) bool
+	promptGate func(phaseID types.PhaseID, promptNum int) bool
 }
 
 // NewAssigner creates an Assigner with the given dependencies.
@@ -57,6 +58,12 @@ func (a *Assigner) SetReadyGate(fn func(id types.AgentID) bool) {
 	a.readyGate = fn
 }
 
+// SetPromptGate configures an optional callback that decides whether a prompt
+// is dispatchable. Returning false skips assignment for that prompt.
+func (a *Assigner) SetPromptGate(fn func(phaseID types.PhaseID, promptNum int) bool) {
+	a.promptGate = fn
+}
+
 // AssignNext finds the next pending prompt and assigns it to an idle agent.
 // Returns ("", nil) if there is no prompt to assign. Returns ("", ErrNoAvailableAgent)
 // if a prompt exists but no agent is idle. On success returns the assigned agent's ID.
@@ -69,6 +76,9 @@ func (a *Assigner) AssignNext(ctx context.Context) (types.AgentID, error) {
 	spec := a.prompts.CurrentPhase()
 	if spec == nil {
 		return "", nil
+	}
+	if a.promptGate != nil && !a.promptGate(spec.ID, prompt.PromptNumber) {
+		return "", ErrNoAvailableAgent
 	}
 
 	idle := a.idleAgents()

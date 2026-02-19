@@ -3,6 +3,7 @@ package security
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"sync"
 	"time"
@@ -58,6 +59,35 @@ func (a *AuditLogger) Log(entry AuditEntry) error {
 		a.hook(entry)
 	}
 	return err
+}
+
+// LogEvent writes a structured audit event as JSONL to the same audit stream.
+// This is additive and backward-compatible with legacy AuditEntry records.
+func (a *AuditLogger) LogEvent(event AuditEvent) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now().UTC()
+	}
+	payload := map[string]any{
+		"event_type":     event.Type,
+		"id":             event.ID,
+		"interaction_id": event.InteractionID,
+		"action":         event.Action,
+		"target":         event.Target,
+		"agent_id":       event.AgentID,
+		"phase_id":       event.PhaseID,
+		"prompt_num":     event.PromptNum,
+		"allowed":        event.Allowed,
+		"timestamp":      event.Timestamp,
+	}
+	if len(event.Metadata) > 0 {
+		meta := make(map[string]string, len(event.Metadata))
+		maps.Copy(meta, event.Metadata)
+		payload["metadata"] = meta
+	}
+	return a.enc.Encode(payload)
 }
 
 // SetHook registers a function called after each audit entry is written.

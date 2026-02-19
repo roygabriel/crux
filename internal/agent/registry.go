@@ -32,6 +32,8 @@ type AgentInstance struct {
 	Plugin plugin.AgentPlugin `json:"-"`
 	// LaunchedAt is when the agent was spawned.
 	LaunchedAt time.Time `json:"launched_at"`
+	// OutputTee captures structured output snapshots for this agent.
+	OutputTee *OutputTee `json:"-"`
 }
 
 // Registry manages running agent instances with thread-safe CRUD
@@ -43,6 +45,7 @@ type Registry struct {
 	pm        *tmux.PaneManager
 	plugins   *plugin.Registry
 	logger    *slog.Logger
+	outputLogDir string
 }
 
 // NewRegistry creates an agent registry backed by the given tmux
@@ -55,6 +58,13 @@ func NewRegistry(sm *tmux.SessionManager, pm *tmux.PaneManager, plugins *plugin.
 		plugins:   plugins,
 		logger:    logger,
 	}
+}
+
+// SetOutputLogDir configures where per-agent structured output logs are written.
+func (r *Registry) SetOutputLogDir(dir string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.outputLogDir = dir
 }
 
 // Get returns the agent instance for the given ID. It returns

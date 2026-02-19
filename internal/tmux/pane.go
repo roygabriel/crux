@@ -122,6 +122,18 @@ func (m *PaneManager) SendKeys(ctx context.Context, paneID string, text string) 
 // delivering task content that may contain code fences and semicolons.
 // Only the byte-length limit is enforced.
 func (m *PaneManager) SendKeysLiteral(ctx context.Context, paneID string, text string) error {
+	if err := m.SendKeysLiteralRaw(ctx, paneID, text); err != nil {
+		return err
+	}
+	if err := m.SendKeysRaw(ctx, paneID, "Enter"); err != nil {
+		return fmt.Errorf("send literal keys to pane %q (enter): %w", paneID, err)
+	}
+	return nil
+}
+
+// SendKeysLiteralRaw sends text literally to a tmux pane without appending Enter.
+// Use this when progressively streaming a large payload and submit once at the end.
+func (m *PaneManager) SendKeysLiteralRaw(ctx context.Context, paneID string, text string) error {
 	if paneID == "" {
 		return fmt.Errorf("pane ID must not be empty")
 	}
@@ -132,11 +144,6 @@ func (m *PaneManager) SendKeysLiteral(ctx context.Context, paneID string, text s
 	_, err := m.cmd.Run(ctx, "send-keys", "-l", "-t", paneID, "--", text)
 	if err != nil {
 		return fmt.Errorf("send literal keys to pane %q: %w", paneID, err)
-	}
-	// Send Enter separately (as a key name, not literal text).
-	_, err = m.cmd.Run(ctx, "send-keys", "-t", paneID, "Enter")
-	if err != nil {
-		return fmt.Errorf("send literal keys to pane %q (enter): %w", paneID, err)
 	}
 	m.logger.Debug("sent literal keys",
 		"pane_id", paneID,

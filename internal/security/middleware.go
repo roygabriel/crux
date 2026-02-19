@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/roygabriel/crux/pkg/types"
 )
@@ -116,6 +117,23 @@ func (m *SecurityMiddleware) Gate(
 
 	// Enforcer check.
 	result := m.enforcer.Check(perm, action, target)
+	interactionID := NewInteractionID(agentID, string(action), target, phaseID, promptNum)
+
+	// New structured taxonomy event: permission check.
+	_ = EmitPermissionChecked(context.Background(), m.audit, AuditEvent{
+		ID:            NewEventID(),
+		InteractionID: interactionID,
+		Action:        string(action),
+		Target:        target,
+		AgentID:       string(agentID),
+		PhaseID:       string(phaseID),
+		PromptNum:     promptNum,
+		Allowed:       result.Allowed,
+		Timestamp:     time.Now().UTC(),
+		Metadata: map[string]string{
+			"permission": string(perm),
+		},
+	})
 
 	// Redact secrets from audit target.
 	auditTarget := target
@@ -141,6 +159,19 @@ func (m *SecurityMiddleware) Gate(
 	if !result.Allowed {
 		return fmt.Errorf("action %s denied for %s: %w", action, agentID, types.ErrPermissionDenied)
 	}
+
+	// New structured taxonomy event: action attempted after allow.
+	_ = EmitActionAttempted(context.Background(), m.audit, AuditEvent{
+		ID:            NewEventID(),
+		InteractionID: interactionID,
+		Action:        string(action),
+		Target:        target,
+		AgentID:       string(agentID),
+		PhaseID:       string(phaseID),
+		PromptNum:     promptNum,
+		Allowed:       true,
+		Timestamp:     time.Now().UTC(),
+	})
 
 	// Post-record: rate limiter.
 	if m.rateLimiter != nil {
@@ -190,15 +221,121 @@ func (m *SecurityMiddleware) GateString(
 	phaseID types.PhaseID,
 	promptNum int,
 ) error {
-	return m.Gate(agentID, perm, ActionType(action), target, phaseID, promptNum)
+	parsed, ok := ParseActionType(action)
+	if !ok {
+		return m.Gate(agentID, perm, ActionType(action), target, phaseID, promptNum)
+	}
+	return m.Gate(agentID, perm, parsed, target, phaseID, promptNum)
 }
 
 // GateMessage adapts the full Gate method to the messenger's MessageGate
-// interface. It uses a fixed ActionType and empty phase context.
+// interface. It normalizes the provided action to message_send and uses
+// fail-open+alert behavior for unknown control-plane action names.
 func (m *SecurityMiddleware) GateMessage(
 	agentID types.AgentID,
 	perm types.Permission,
 	action, target string,
 ) error {
-	return m.Gate(agentID, perm, ActionType(action), target, "", 0)
+	parsed, ok := ParseActionType(action)
+	if !ok {
+		m.logger.Warn("unknown control-plane action; allowing dispatch via fail-open policy",
+			"agent_id", agentID,
+			"raw_action", action,
+			"target", target,
+		)
+		m.emitControlPlaneFailOpenAudit(agentID, perm, action, target, "unknown_action_type")
+		return m.GateDispatch(agentID, perm, target)
+	}
+	if parsed != ActionMessageSend {
+		m.logger.Warn("unexpected non-message action for control-plane dispatch; coercing to message_send",
+			"agent_id", agentID,
+			"raw_action", action,
+			"parsed_action", parsed,
+			"target", target,
+		)
+		m.emitControlPlaneFailOpenAudit(agentID, perm, action, target, "non_message_action")
+		return m.GateDispatch(agentID, perm, target)
+	}
+	return m.GateDispatch(agentID, perm, target)
+}
+
+// GateDispatch authorizes control-plane dispatch to an agent pane.
+func (m *SecurityMiddleware) GateDispatch(
+	agentID types.AgentID,
+	perm types.Permission,
+	target string,
+) error {
+	return m.Gate(agentID, perm, ActionMessageSend, target, "", 0)
+}
+
+// EmitEffectConfirmed records an effect_confirmed taxonomy event.
+func (m *SecurityMiddleware) EmitEffectConfirmed(
+	agentID types.AgentID,
+	action, target string,
+	phaseID types.PhaseID,
+	promptNum int,
+	metadata map[string]string,
+) error {
+	interactionID := NewInteractionID(agentID, action, target, phaseID, promptNum)
+	return EmitEffectConfirmed(context.Background(), m.audit, AuditEvent{
+		ID:            NewEventID(),
+		InteractionID: interactionID,
+		Action:        action,
+		Target:        target,
+		AgentID:       string(agentID),
+		PhaseID:       string(phaseID),
+		PromptNum:     promptNum,
+		Allowed:       true,
+		Timestamp:     time.Now().UTC(),
+		Metadata:      metadata,
+	})
+}
+
+func (m *SecurityMiddleware) emitControlPlaneFailOpenAudit(
+	agentID types.AgentID,
+	perm types.Permission,
+	rawAction, target, reason string,
+) {
+	if m.audit == nil {
+		return
+	}
+
+	metadata := map[string]string{
+		"policy":        "fail_open_control_plane",
+		"reason":        reason,
+		"raw_action":    rawAction,
+		"normalized_as": string(ActionMessageSend),
+	}
+	interactionID := NewInteractionID(agentID, rawAction, target, "", 0)
+	_ = EmitPermissionChecked(context.Background(), m.audit, AuditEvent{
+		ID:            NewEventID(),
+		InteractionID: interactionID,
+		Action:        string(ActionMessageSend),
+		Target:        target,
+		AgentID:       string(agentID),
+		Allowed:       true,
+		Timestamp:     time.Now().UTC(),
+		Metadata:      metadata,
+	})
+	_ = EmitActionAttempted(context.Background(), m.audit, AuditEvent{
+		ID:            NewEventID(),
+		InteractionID: interactionID,
+		Action:        string(ActionMessageSend),
+		Target:        target,
+		AgentID:       string(agentID),
+		Allowed:       true,
+		Timestamp:     time.Now().UTC(),
+		Metadata:      metadata,
+	})
+	entry := AuditEntry{
+		AgentID:    agentID,
+		Action:     ActionMessageSend,
+		Target:     target,
+		Permission: perm,
+		Allowed:    true,
+		Reason:     "fail-open control-plane action normalization",
+	}
+	if err := m.audit.Log(entry); err != nil {
+		m.logger.Warn("audit log write failed", "error", err, "agent_id", agentID)
+	}
 }

@@ -55,26 +55,26 @@ func TestBumpDispatchRepeat(t *testing.T) {
 	fp := dispatchFingerprint{phaseID: "1A", promptNum: 1, promptHash: "a", filesHash: "f"}
 	fp2 := dispatchFingerprint{phaseID: "1A", promptNum: 2, promptHash: "b", filesHash: "f2"}
 
-	if got := o.bumpDispatchRepeat("engineer-1", fp, "pane-a"); got != 1 {
+	if got := o.bumpDispatchRepeat("engineer-1", fp); got != 1 {
 		t.Fatalf("repeat count #1 = %d, want 1", got)
 	}
-	if got := o.bumpDispatchRepeat("engineer-1", fp, "pane-a"); got != 2 {
+	if got := o.bumpDispatchRepeat("engineer-1", fp); got != 2 {
 		t.Fatalf("repeat count #2 = %d, want 2", got)
 	}
-	if got := o.bumpDispatchRepeat("engineer-1", fp2, "pane-b"); got != 1 {
+	if got := o.bumpDispatchRepeat("engineer-1", fp2); got != 1 {
 		t.Fatalf("repeat count after fingerprint change = %d, want 1", got)
 	}
 }
 
-func TestBumpDispatchRepeat_ResetsOnPaneProgress(t *testing.T) {
+func TestBumpDispatchRepeat_IgnoresPaneChurn(t *testing.T) {
 	o := &Orchestrator{logger: slog.Default()}
 	fp := dispatchFingerprint{phaseID: "1A", promptNum: 1, promptHash: "a", filesHash: "f"}
 
-	if got := o.bumpDispatchRepeat("engineer-1", fp, "pane-a"); got != 1 {
+	if got := o.bumpDispatchRepeat("engineer-1", fp); got != 1 {
 		t.Fatalf("repeat count #1 = %d, want 1", got)
 	}
-	if got := o.bumpDispatchRepeat("engineer-1", fp, "pane-b"); got != 1 {
-		t.Fatalf("repeat count after pane progress = %d, want 1", got)
+	if got := o.bumpDispatchRepeat("engineer-1", fp); got != 2 {
+		t.Fatalf("repeat count should still increase for same prompt fingerprint, got %d", got)
 	}
 }
 

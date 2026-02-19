@@ -43,6 +43,9 @@ crux start
 # Check what's happening
 crux status
 
+# Check binary version/build metadata
+crux -v
+
 # Search past decisions
 crux decisions search "chose chi router over gorilla mux"
 

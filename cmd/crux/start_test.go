@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,9 @@ import (
 
 	"github.com/roygabriel/crux/internal/config"
 	"github.com/roygabriel/crux/internal/instruct"
+	"github.com/roygabriel/crux/internal/orchestrator"
+	"github.com/roygabriel/crux/internal/phase"
+	"github.com/roygabriel/crux/pkg/types"
 )
 
 // writeTestStartConfig writes a minimal config with a claude agent for start tests.
@@ -189,5 +193,72 @@ func TestValidateGitRepo(t *testing.T) {
 				t.Errorf("error %q does not contain %q", err.Error(), tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestDecideStartupCursor_UsesVerifiedCursor(t *testing.T) {
+	order := []types.PhaseID{"1A", "1B"}
+	progress := map[types.PhaseID]phase.PhaseProgress{
+		"1A": {Prompts: []phase.PromptContract{{PromptNumber: 1}, {PromptNumber: 2}}},
+		"1B": {Prompts: []phase.PromptContract{{PromptNumber: 1}}},
+	}
+	result := &orchestrator.ReconcileResult{
+		VerifiedPhase:  "1A",
+		VerifiedPrompt: 2,
+	}
+
+	phaseID, promptNum, fromScratch, reason := decideStartupCursor(nil, result, order, progress)
+	if phaseID != "1A" || promptNum != 2 {
+		t.Fatalf("cursor = %s:%d, want 1A:2", phaseID, promptNum)
+	}
+	if fromScratch {
+		t.Fatalf("fromScratch = true, want false (reason=%s)", reason)
+	}
+}
+
+func TestDecideStartupCursor_FallsBackOnReconcileError(t *testing.T) {
+	order := []types.PhaseID{"1A", "1B"}
+	progress := map[types.PhaseID]phase.PhaseProgress{
+		"1A": {Prompts: []phase.PromptContract{{PromptNumber: 1}}},
+		"1B": {Prompts: []phase.PromptContract{{PromptNumber: 1}}},
+	}
+
+	phaseID, promptNum, fromScratch, reason := decideStartupCursor(
+		errors.New("reconcile failed"),
+		nil,
+		order,
+		progress,
+	)
+	if phaseID != "1A" || promptNum != 1 {
+		t.Fatalf("cursor = %s:%d, want 1A:1", phaseID, promptNum)
+	}
+	if !fromScratch {
+		t.Fatal("fromScratch = false, want true")
+	}
+	if reason != "reconciliation_error" {
+		t.Fatalf("reason = %q, want reconciliation_error", reason)
+	}
+}
+
+func TestDecideStartupCursor_FallsBackOnInvalidVerifiedPrompt(t *testing.T) {
+	order := []types.PhaseID{"1A", "1B"}
+	progress := map[types.PhaseID]phase.PhaseProgress{
+		"1A": {Prompts: []phase.PromptContract{{PromptNumber: 1}}},
+		"1B": {Prompts: []phase.PromptContract{{PromptNumber: 1}}},
+	}
+	result := &orchestrator.ReconcileResult{
+		VerifiedPhase:  "1A",
+		VerifiedPrompt: 9,
+	}
+
+	phaseID, promptNum, fromScratch, reason := decideStartupCursor(nil, result, order, progress)
+	if phaseID != "1A" || promptNum != 1 {
+		t.Fatalf("cursor = %s:%d, want 1A:1", phaseID, promptNum)
+	}
+	if !fromScratch {
+		t.Fatal("fromScratch = false, want true")
+	}
+	if reason != "invalid_verified_prompt" {
+		t.Fatalf("reason = %q, want invalid_verified_prompt", reason)
 	}
 }

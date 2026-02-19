@@ -291,3 +291,35 @@ func TestMessageSend_AllowedForAllPermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestParseActionType_NormalizesAliases(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]ActionType{
+		"message_send":   ActionMessageSend,
+		"message-send":   ActionMessageSend,
+		"message.send":   ActionMessageSend,
+		" message send ": ActionMessageSend,
+		"git-push":       ActionGitPush,
+		"git.push":       ActionGitPush,
+		"file write":     ActionFileWrite,
+	}
+
+	for raw, want := range cases {
+		got, ok := ParseActionType(raw)
+		if !ok {
+			t.Fatalf("ParseActionType(%q) returned ok=false", raw)
+		}
+		if got != want {
+			t.Fatalf("ParseActionType(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestParseActionType_Unknown(t *testing.T) {
+	t.Parallel()
+
+	if got, ok := ParseActionType("unknown_action"); ok {
+		t.Fatalf("ParseActionType returned %q for unknown action", got)
+	}
+}

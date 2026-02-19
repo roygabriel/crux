@@ -27,6 +27,48 @@ const (
 	ActionMessageSend ActionType = "message_send"
 )
 
+var actionAliasMap = map[string]ActionType{
+	"file_read":      ActionFileRead,
+	"fileread":       ActionFileRead,
+	"read_file":      ActionFileRead,
+	"file_write":     ActionFileWrite,
+	"filewrite":      ActionFileWrite,
+	"write_file":     ActionFileWrite,
+	"shell_exec":     ActionShellExec,
+	"shellexec":      ActionShellExec,
+	"exec_shell":     ActionShellExec,
+	"network_access": ActionNetworkAccess,
+	"networkaccess":  ActionNetworkAccess,
+	"net_access":     ActionNetworkAccess,
+	"git_push":       ActionGitPush,
+	"gitpush":        ActionGitPush,
+	"git_commit":     ActionGitCommit,
+	"gitcommit":      ActionGitCommit,
+	"message_send":   ActionMessageSend,
+	"messagesend":    ActionMessageSend,
+	"message":        ActionMessageSend,
+	"dispatch":       ActionMessageSend,
+}
+
+// ParseActionType parses a raw action string into a canonical ActionType.
+// It accepts canonical values plus normalized aliases.
+func ParseActionType(raw string) (ActionType, bool) {
+	normalized := normalizeActionType(raw)
+	action, ok := actionAliasMap[normalized]
+	return action, ok
+}
+
+func normalizeActionType(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	replacer := strings.NewReplacer("-", "_", ".", "_", "/", "_", "\\", "_", " ", "_")
+	s = replacer.Replace(s)
+	s = strings.Trim(s, "_")
+	for strings.Contains(s, "__") {
+		s = strings.ReplaceAll(s, "__", "_")
+	}
+	return s
+}
+
 // PermissionResult captures the outcome of a permission check.
 type PermissionResult struct {
 	Allowed    bool             `json:"allowed"`

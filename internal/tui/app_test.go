@@ -21,9 +21,13 @@ func TestModel_Init_ReturnsCmd(t *testing.T) {
 
 func TestModel_KeyQ_Quits(t *testing.T) {
 	m := NewModel(NewStateBridge(1), nil, nil)
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	if cmd == nil {
 		t.Fatal("expected quit cmd, got nil")
+	}
+	m2 := updated.(Model)
+	if !m2.DetachRequested() {
+		t.Fatal("expected detachRequested after q")
 	}
 	msg := cmd()
 	if _, ok := msg.(tea.QuitMsg); !ok {
@@ -423,11 +427,11 @@ func TestModel_StatusBarShowsPhaseName(t *testing.T) {
 	}
 }
 
-func TestModel_QuitSendsCmdShutdown(t *testing.T) {
+func TestModel_CtrlCSendsCmdShutdown(t *testing.T) {
 	bus := NewCommandBus(4, slog.Default())
 	m := NewModel(NewStateBridge(1), nil, bus)
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
 	}

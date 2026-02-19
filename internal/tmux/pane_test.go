@@ -622,6 +622,32 @@ func TestPaneManagerSendKeysLiteral(t *testing.T) {
 	}
 }
 
+func TestPaneManagerSendKeysLiteralRaw(t *testing.T) {
+	t.Parallel()
+
+	var calls [][]string
+	pm := NewPaneManager(&mockCommander{runFunc: func(_ context.Context, args ...string) (string, error) {
+		copied := append([]string(nil), args...)
+		calls = append(calls, copied)
+		return "", nil
+	}}, newTestLogger())
+
+	if err := pm.SendKeysLiteralRaw(context.Background(), "%0", "hello\nworld"); err != nil {
+		t.Fatalf("SendKeysLiteralRaw: %v", err)
+	}
+
+	if len(calls) != 1 {
+		t.Fatalf("expected exactly 1 tmux call, got %d", len(calls))
+	}
+	got := calls[0]
+	if len(got) < 6 {
+		t.Fatalf("unexpected args length: %v", got)
+	}
+	if got[0] != "send-keys" || got[1] != "-l" || got[2] != "-t" || got[3] != "%0" || got[4] != "--" || got[5] != "hello\nworld" {
+		t.Fatalf("unexpected args: %v", got)
+	}
+}
+
 func TestPaneManagerSendKeysRaw(t *testing.T) {
 	t.Parallel()
 

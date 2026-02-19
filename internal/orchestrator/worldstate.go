@@ -26,6 +26,8 @@ type AgentState struct {
 	PhaseID types.PhaseID `json:"phase_id,omitempty"`
 	// AssignedAt is when the agent was assigned its current work.
 	AssignedAt time.Time `json:"assigned_at,omitempty"`
+	// StallDetected indicates semantic progress has stalled.
+	StallDetected bool `json:"stall_detected,omitempty"`
 }
 
 // WorldState is a thread-safe snapshot of the orchestration state.

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -72,6 +73,17 @@ func (r *Registry) Spawn(ctx context.Context, cfg types.Agent) error {
 		Plugin:     agentPlugin,
 		LaunchedAt: time.Now(),
 	}
+	if strings.TrimSpace(r.outputLogDir) != "" {
+		tee, teeErr := NewOutputTee(string(cfg.ID), r.outputLogDir, io.Discard)
+		if teeErr != nil {
+			r.logger.Warn("failed to create output tee",
+				"agent_id", cfg.ID,
+				"error", teeErr,
+			)
+		} else {
+			inst.OutputTee = tee
+		}
+	}
 
 	r.mu.Lock()
 	// Double-check: another goroutine may have registered the same ID
@@ -117,6 +129,9 @@ func (r *Registry) Kill(ctx context.Context, id types.AgentID) error {
 			"pane_id", paneID,
 			"error", err,
 		)
+	}
+	if inst.OutputTee != nil {
+		_ = inst.OutputTee.Close()
 	}
 
 	r.logger.Info("killed agent", "agent_id", id, "pane_id", paneID)

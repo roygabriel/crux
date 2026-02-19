@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/roygabriel/crux/internal/tmux"
@@ -16,6 +15,11 @@ const defaultPollInterval = time.Second
 // MessageGate checks whether sending a message to an agent is permitted.
 type MessageGate interface {
 	GateMessage(agentID types.AgentID, perm types.Permission, action, target string) error
+}
+
+// DispatchGate performs typed control-plane dispatch authorization.
+type DispatchGate interface {
+	GateDispatch(agentID types.AgentID, perm types.Permission, target string) error
 }
 
 // Messenger sends messages to agents and waits for responses by
@@ -54,9 +58,8 @@ func (m *Messenger) SetMessageGate(g MessageGate) {
 }
 
 // Send formats a message using the target agent's plugin and sends it
-// to the agent's tmux pane. Large messages are split into chunks that
-// stay under tmux send-keys limits. Each chunk is sent as a separate
-// send-keys call.
+// to the agent's tmux pane. Large messages are split into literal chunks
+// and streamed without Enter; a single Enter is sent at the end to submit.
 func (m *Messenger) Send(ctx context.Context, agentID types.AgentID, msg types.Message) error {
 	inst, err := m.registry.Get(agentID)
 	if err != nil {
@@ -64,8 +67,14 @@ func (m *Messenger) Send(ctx context.Context, agentID types.AgentID, msg types.M
 	}
 
 	if m.gate != nil {
-		if err := m.gate.GateMessage(agentID, inst.Agent.Permission, "message_send", string(msg.Type)); err != nil {
-			return fmt.Errorf("send to agent %q: %w", agentID, err)
+		if dispatchGate, ok := m.gate.(DispatchGate); ok {
+			if err := dispatchGate.GateDispatch(agentID, inst.Agent.Permission, string(msg.Type)); err != nil {
+				return fmt.Errorf("send to agent %q: %w", agentID, err)
+			}
+		} else {
+			if err := m.gate.GateMessage(agentID, inst.Agent.Permission, "message_send", string(msg.Type)); err != nil {
+				return fmt.Errorf("send to agent %q: %w", agentID, err)
+			}
 		}
 	}
 
@@ -90,9 +99,12 @@ func (m *Messenger) Send(ctx context.Context, agentID types.AgentID, msg types.M
 			"chunk_total", len(chunks),
 			"chunk_bytes", len(chunk),
 		)
-		if err := m.pm.SendKeysLiteral(ctx, inst.Agent.PaneID, chunk); err != nil {
+		if err := m.pm.SendKeysLiteralRaw(ctx, inst.Agent.PaneID, chunk); err != nil {
 			return fmt.Errorf("send to agent %q: %w", agentID, err)
 		}
+	}
+	if err := m.pm.SendKeysRaw(ctx, inst.Agent.PaneID, "Enter"); err != nil {
+		return fmt.Errorf("send to agent %q: submit: %w", agentID, err)
 	}
 	if capturedBefore {
 		afterCapture, err := m.pm.Capture(ctx, inst.Agent.PaneID, 0)
@@ -198,30 +210,23 @@ func (m *Messenger) debugCaptureSnapshot(ctx context.Context, paneID string) (st
 	return snap, true
 }
 
-// chunkMessage splits text into chunks suitable for tmux send-keys.
-// It splits on newlines first, then breaks long lines at maxLen byte
-// boundaries. Empty lines are skipped.
+// chunkMessage splits text into maxLen-sized chunks while preserving exact
+// message bytes (including newlines and blank lines).
 func chunkMessage(text string, maxLen int) []string {
 	if text == "" {
 		return nil
 	}
-
-	lines := strings.Split(text, "\n")
-	var chunks []string
-
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-
-		for len(line) > maxLen {
-			chunks = append(chunks, line[:maxLen])
-			line = line[maxLen:]
-		}
-		if line != "" {
-			chunks = append(chunks, line)
-		}
+	if maxLen <= 0 {
+		return []string{text}
 	}
 
+	var chunks []string
+	for start := 0; start < len(text); start += maxLen {
+		end := start + maxLen
+		if end > len(text) {
+			end = len(text)
+		}
+		chunks = append(chunks, text[start:end])
+	}
 	return chunks
 }

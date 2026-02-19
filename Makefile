@@ -2,7 +2,16 @@ BINARY := crux
 BUILD_DIR := bin
 MODULE := github.com/roygabriel/crux
 
-LDFLAGS := -s -w
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+DIRTY ?= $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo true || echo false)
+
+LDFLAGS := -s -w \
+	-X 'main.version=$(VERSION)' \
+	-X 'main.commit=$(COMMIT)' \
+	-X 'main.buildDate=$(BUILD_DATE)' \
+	-X 'main.vcsDirty=$(DIRTY)'
 BUILDFLAGS := -trimpath -ldflags="$(LDFLAGS)"
 
 MIN_COVERAGE := 70

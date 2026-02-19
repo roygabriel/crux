@@ -63,6 +63,12 @@ const (
 	StatusPrompted AgentStatus = "prompted"
 	// StatusStopped means the agent has been explicitly stopped.
 	StatusStopped AgentStatus = "stopped"
+	// StatusVerifying means gate/evidence verification is running.
+	StatusVerifying AgentStatus = "verifying"
+	// StatusReviewing means reviewer evaluation is running.
+	StatusReviewing AgentStatus = "reviewing"
+	// StatusQuarantined means prompt execution has been terminally quarantined.
+	StatusQuarantined AgentStatus = "quarantined"
 )
 
 // String returns the string representation of an AgentStatus.

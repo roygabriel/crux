@@ -21,6 +21,33 @@ type messengerPlugin struct {
 	detectBusyFn func(string) bool
 }
 
+type dispatchGateStub struct {
+	dispatchCalls int
+	messageCalls  int
+	dispatchErr   error
+	messageErr    error
+}
+
+func (g *dispatchGateStub) GateDispatch(_ types.AgentID, _ types.Permission, _ string) error {
+	g.dispatchCalls++
+	return g.dispatchErr
+}
+
+func (g *dispatchGateStub) GateMessage(_ types.AgentID, _ types.Permission, _, _ string) error {
+	g.messageCalls++
+	return g.messageErr
+}
+
+type legacyMessageGateStub struct {
+	calls int
+	err   error
+}
+
+func (g *legacyMessageGateStub) GateMessage(_ types.AgentID, _ types.Permission, _, _ string) error {
+	g.calls++
+	return g.err
+}
+
 func (p *messengerPlugin) FormatMessage(_ types.Message) string {
 	return p.formatResult
 }
@@ -136,14 +163,11 @@ func TestMessengerSendChunkedMessage(t *testing.T) {
 		t.Fatalf("Send: %v", err)
 	}
 
-	if len(sentTexts) != 3 {
-		t.Fatalf("expected 3 chunks, got %d: %v", len(sentTexts), sentTexts)
+	if len(sentTexts) != 1 {
+		t.Fatalf("expected 1 chunk, got %d: %v", len(sentTexts), sentTexts)
 	}
-	if sentTexts[0] != "line one" {
-		t.Errorf("chunk[0] = %q, want %q", sentTexts[0], "line one")
-	}
-	if sentTexts[2] != "line three" {
-		t.Errorf("chunk[2] = %q, want %q", sentTexts[2], "line three")
+	if sentTexts[0] != "line one\nline two\nline three" {
+		t.Errorf("chunk[0] = %q, want full multiline payload", sentTexts[0])
 	}
 }
 
@@ -222,16 +246,11 @@ func TestMessengerSendMarkdownWithCodeFences(t *testing.T) {
 		t.Fatalf("Send: expected no error for markdown content, got %v", err)
 	}
 
-	// chunkMessage splits on newlines; expect chunks for non-empty lines.
-	// Lines: "```go", "fmt.Println(\"hello\")", "```", "Run: go build && go test"
-	if len(sentTexts) != 4 {
-		t.Fatalf("expected 4 chunks, got %d: %v", len(sentTexts), sentTexts)
+	if len(sentTexts) != 1 {
+		t.Fatalf("expected 1 chunk, got %d: %v", len(sentTexts), sentTexts)
 	}
-	if sentTexts[0] != "```go" {
-		t.Errorf("chunk[0] = %q, want %q", sentTexts[0], "```go")
-	}
-	if sentTexts[3] != "Run: go build && go test" {
-		t.Errorf("chunk[3] = %q, want %q", sentTexts[3], "Run: go build && go test")
+	if sentTexts[0] != "```go\nfmt.Println(\"hello\")\n```\nRun: go build && go test" {
+		t.Errorf("chunk payload mismatch: %q", sentTexts[0])
 	}
 }
 
@@ -303,6 +322,59 @@ func TestMessengerSendPaneError(t *testing.T) {
 	err = m.Send(context.Background(), "agent-1", msg)
 	if err == nil {
 		t.Fatal("Send: expected error on pane send failure")
+	}
+}
+
+func TestMessengerSend_UsesTypedDispatchGateWhenAvailable(t *testing.T) {
+	t.Parallel()
+
+	cmd := successCommander("%1")
+	p := &messengerPlugin{
+		stubPlugin:   stubPlugin{name: "test-plugin"},
+		formatResult: "do work",
+	}
+	_, m, err := spawnTestAgent(cmd, p)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	gate := &dispatchGateStub{}
+	m.SetMessageGate(gate)
+
+	msg := types.Message{ID: "msg-gate-1", Type: types.MessageTask}
+	if err := m.Send(context.Background(), "agent-1", msg); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if gate.dispatchCalls != 1 {
+		t.Fatalf("dispatch calls = %d, want 1", gate.dispatchCalls)
+	}
+	if gate.messageCalls != 0 {
+		t.Fatalf("message calls = %d, want 0", gate.messageCalls)
+	}
+}
+
+func TestMessengerSend_FallsBackToLegacyMessageGate(t *testing.T) {
+	t.Parallel()
+
+	cmd := successCommander("%1")
+	p := &messengerPlugin{
+		stubPlugin:   stubPlugin{name: "test-plugin"},
+		formatResult: "do work",
+	}
+	_, m, err := spawnTestAgent(cmd, p)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	gate := &legacyMessageGateStub{}
+	m.SetMessageGate(gate)
+
+	msg := types.Message{ID: "msg-gate-2", Type: types.MessageTask}
+	if err := m.Send(context.Background(), "agent-1", msg); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if gate.calls != 1 {
+		t.Fatalf("legacy gate calls = %d, want 1", gate.calls)
 	}
 }
 

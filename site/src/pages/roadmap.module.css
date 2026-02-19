@@ -403,7 +403,54 @@
 }
 
 .modalDescription p {
-    margin: 0;
+    margin: 0 0 0.75rem;
+}
+
+.modalDescription p:last-child {
+    margin-bottom: 0;
+}
+
+.modalDescription h4 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 1rem 0 0.4rem;
+    color: inherit;
+}
+
+.modalDescription h4:first-child {
+    margin-top: 0;
+}
+
+.modalDescription h5 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0.75rem 0 0.3rem;
+    color: inherit;
+}
+
+.modalDescription code {
+    background: rgba(0, 0, 0, 0.06);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+[data-theme='dark'] .modalDescription code {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.modalDescription ul {
+    margin: 0.4rem 0 0.75rem;
+    padding-left: 1.25rem;
+}
+
+.modalDescription li {
+    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+}
+
+.modalDescription strong {
+    font-weight: 600;
 }
 
 .modalLink {

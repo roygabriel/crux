@@ -26,8 +26,8 @@ const PROJECT_NUM = parseInt(process.env.PROJECT_NUM || '2', 10);
 const OUTPUT = join(__dirname, '..', 'site', 'src', 'data', 'roadmap.json');
 
 if (!TOKEN) {
-    console.error('ERROR: PROJECT_PAT environment variable is required.');
-    process.exit(1);
+  console.error('ERROR: PROJECT_PAT environment variable is required.');
+  process.exit(1);
 }
 
 const QUERY = `
@@ -90,131 +90,159 @@ query($owner: String!, $number: Int!) {
 `;
 
 async function fetchProject() {
-    const res = await fetch('https://api.github.com/graphql', {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${TOKEN}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            query: QUERY,
-            variables: { owner: OWNER, number: PROJECT_NUM },
-        }),
-    });
+  const res = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: QUERY,
+      variables: { owner: OWNER, number: PROJECT_NUM },
+    }),
+  });
 
-    if (!res.ok) {
-        throw new Error(`GitHub API returned ${res.status}: ${await res.text()}`);
-    }
+  if (!res.ok) {
+    throw new Error(`GitHub API returned ${res.status}: ${await res.text()}`);
+  }
 
-    const json = await res.json();
+  const json = await res.json();
 
-    if (json.errors) {
-        throw new Error(`GraphQL errors: ${JSON.stringify(json.errors, null, 2)}`);
-    }
+  if (json.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(json.errors, null, 2)}`);
+  }
 
-    return json.data.user.projectV2;
+  return json.data.user.projectV2;
 }
 
 function extractFieldValue(fieldNodes, fieldName) {
-    for (const node of fieldNodes) {
-        const name = node.field?.name;
-        if (name?.toLowerCase() === fieldName.toLowerCase()) {
-            return node.name || node.text || node.title || node.date || null;
-        }
+  for (const node of fieldNodes) {
+    const name = node.field?.name;
+    if (name?.toLowerCase() === fieldName.toLowerCase()) {
+      return node.name || node.text || node.title || node.date || null;
     }
-    return null;
+  }
+  return null;
 }
 
 function mapStatus(raw) {
-    if (!raw) return 'Todo';
-    const lower = raw.toLowerCase();
-    if (lower.includes('done') || lower.includes('complete')) return 'Done';
-    if (lower.includes('progress') || lower.includes('active') || lower.includes('current')) return 'In Progress';
-    return 'Todo';
+  if (!raw) return 'Todo';
+  const lower = raw.toLowerCase();
+  if (lower.includes('done') || lower.includes('complete')) return 'Done';
+  if (lower.includes('progress') || lower.includes('active') || lower.includes('current')) return 'In Progress';
+  return 'Todo';
 }
 
-function inferQuarter(fieldNodes) {
-    // Try explicit "Quarter" field first
-    const quarter = extractFieldValue(fieldNodes, 'Quarter');
-    if (quarter) return quarter;
+function dateToQuarter(dateStr) {
+  const parts = dateStr.split('-');
+  if (parts.length < 2) return null;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  if (isNaN(year) || isNaN(month)) return null;
+  const q = Math.ceil(month / 3);
+  return `Q${q} ${year}`;
+}
 
-    // Try "Target" or "Milestone" fields
-    const target = extractFieldValue(fieldNodes, 'Target')
-        || extractFieldValue(fieldNodes, 'Milestone');
-    if (target && /Q[1-4]\s*\d{4}/i.test(target)) return target;
+function inferQuarter(fieldNodes, body) {
+  // Try explicit "Quarter" field first
+  const quarter = extractFieldValue(fieldNodes, 'Quarter');
+  if (quarter) {
+    // If it looks like a date (YYYY-MM-DD), convert it
+    if (/^\d{4}-\d{2}-\d{2}$/.test(quarter)) return dateToQuarter(quarter);
+    return quarter;
+  }
 
-    // Try iteration field → map to quarter
-    for (const node of fieldNodes) {
-        if (node.startDate) {
-            const date = new Date(node.startDate);
-            const q = Math.ceil((date.getMonth() + 1) / 3);
-            return `Q${q} ${date.getFullYear()}`;
-        }
+  // Try "Target" or "Milestone" fields
+  const target = extractFieldValue(fieldNodes, 'Target')
+    || extractFieldValue(fieldNodes, 'Milestone');
+  if (target) {
+    if (/Q[1-4]\s*\d{4}/i.test(target)) return target;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(target)) return dateToQuarter(target);
+  }
+
+  // Try iteration field → map to quarter
+  for (const node of fieldNodes) {
+    if (node.startDate) {
+      return dateToQuarter(node.startDate);
     }
+  }
 
-    // Fallback: "Unscheduled"
-    return 'Unscheduled';
+  // Try any date field → map to quarter
+  for (const node of fieldNodes) {
+    if (node.date && /^\d{4}-\d{2}-\d{2}$/.test(node.date)) {
+      return dateToQuarter(node.date);
+    }
+  }
+
+  // Try extracting from issue body (## Roadmap Slot)
+  if (body) {
+    const match = body.match(/##\s*Roadmap\s*Slot\s*\n\s*(Q[1-4]\s*\d{4})/i);
+    if (match) return match[1];
+  }
+
+  // Fallback: "Unscheduled"
+  return 'Unscheduled';
 }
 
 function processItems(project) {
-    const quarterMap = new Map();
+  const quarterMap = new Map();
 
-    for (const item of project.items.nodes) {
-        const content = item.content;
-        if (!content || !content.title) continue;
+  for (const item of project.items.nodes) {
+    const content = item.content;
+    if (!content || !content.title) continue;
 
-        const fieldNodes = item.fieldValues?.nodes || [];
+    const fieldNodes = item.fieldValues?.nodes || [];
 
-        const status = mapStatus(extractFieldValue(fieldNodes, 'Status'));
-        const quarter = inferQuarter(fieldNodes);
-        const labels = content.labels?.nodes?.map((l) => l.name) || [];
-        const description = (content.body || '').slice(0, 500);
+    const status = mapStatus(extractFieldValue(fieldNodes, 'Status'));
+    const quarter = inferQuarter(fieldNodes, content.body);
+    const labels = content.labels?.nodes?.map((l) => l.name) || [];
+    const description = (content.body || '').slice(0, 500);
 
-        const roadmapItem = {
-            title: content.title,
-            status,
-            description,
-            labels,
-            url: content.url || '',
-        };
+    const roadmapItem = {
+      title: content.title,
+      status,
+      description,
+      labels,
+      url: content.url || '',
+    };
 
-        if (!quarterMap.has(quarter)) {
-            quarterMap.set(quarter, []);
-        }
-        quarterMap.get(quarter).push(roadmapItem);
+    if (!quarterMap.has(quarter)) {
+      quarterMap.set(quarter, []);
     }
+    quarterMap.get(quarter).push(roadmapItem);
+  }
 
-    // Sort quarters chronologically
-    const sortedQuarters = [...quarterMap.entries()].sort((a, b) => {
-        if (a[0] === 'Unscheduled') return 1;
-        if (b[0] === 'Unscheduled') return -1;
-        return a[0].localeCompare(b[0]);
-    });
+  // Sort quarters chronologically
+  const sortedQuarters = [...quarterMap.entries()].sort((a, b) => {
+    if (a[0] === 'Unscheduled') return 1;
+    if (b[0] === 'Unscheduled') return -1;
+    return a[0].localeCompare(b[0]);
+  });
 
-    return sortedQuarters.map(([label, items]) => ({ label, items }));
+  return sortedQuarters.map(([label, items]) => ({ label, items }));
 }
 
 async function main() {
-    console.log(`Fetching project #${PROJECT_NUM} for ${OWNER}...`);
+  console.log(`Fetching project #${PROJECT_NUM} for ${OWNER}...`);
 
-    const project = await fetchProject();
-    console.log(`Project: ${project.title}`);
-    console.log(`Items: ${project.items.nodes.length}`);
+  const project = await fetchProject();
+  console.log(`Project: ${project.title}`);
+  console.log(`Items: ${project.items.nodes.length}`);
 
-    const quarters = processItems(project);
-    const totalItems = quarters.reduce((sum, q) => sum + q.items.length, 0);
-    console.log(`Grouped into ${quarters.length} quarters, ${totalItems} items`);
+  const quarters = processItems(project);
+  const totalItems = quarters.reduce((sum, q) => sum + q.items.length, 0);
+  console.log(`Grouped into ${quarters.length} quarters, ${totalItems} items`);
 
-    const roadmap = {
-        lastUpdated: new Date().toISOString(),
-        quarters,
-    };
+  const roadmap = {
+    lastUpdated: new Date().toISOString(),
+    quarters,
+  };
 
-    writeFileSync(OUTPUT, JSON.stringify(roadmap, null, 2) + '\n');
-    console.log(`Written to ${OUTPUT}`);
+  writeFileSync(OUTPUT, JSON.stringify(roadmap, null, 2) + '\n');
+  console.log(`Written to ${OUTPUT}`);
 }
 
 main().catch((err) => {
-    console.error('Failed to fetch roadmap:', err.message);
-    process.exit(1);
+  console.error('Failed to fetch roadmap:', err.message);
+  process.exit(1);
 });

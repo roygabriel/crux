@@ -1,7 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Layout from '@theme/Layout';
 import roadmapData from '../data/roadmap.json';
 import styles from './roadmap.module.css';
+
+/** Lightweight markdown → HTML for issue body descriptions. */
+function simpleMarkdown(text) {
+    if (!text) return '';
+    return text
+        // Escape HTML
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        // Headings (## → h4, ### → h5, keep them small in modal)
+        .replace(/^### (.+)$/gm, '<h5>$1</h5>')
+        .replace(/^## (.+)$/gm, '<h4>$1</h4>')
+        .replace(/^# (.+)$/gm, '<h4>$1</h4>')
+        // Bold & italic
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        // Inline code
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        // Unordered list items
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        // Wrap consecutive <li> in <ul>
+        .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
+        // Paragraphs (double newlines)
+        .replace(/\n\n/g, '</p><p>')
+        // Single newlines → <br>
+        .replace(/\n/g, '<br/>')
+        // Wrap in paragraph
+        .replace(/^(.+)$/, '<p>$1</p>');
+}
 
 const STATUS_CONFIG = {
     Done: { className: 'statusDone', icon: '✓' },
@@ -39,9 +68,10 @@ function ItemModal({ item, onClose }) {
                     ))}
                 </div>
                 {item.description && (
-                    <div className={styles.modalDescription}>
-                        <p>{item.description}</p>
-                    </div>
+                    <div
+                        className={styles.modalDescription}
+                        dangerouslySetInnerHTML={{ __html: simpleMarkdown(item.description) }}
+                    />
                 )}
                 {item.url && (
                     <a

@@ -26,11 +26,12 @@ func DefaultConfig() *Config {
 			DeniedPaths:        []string{".git/", ".env", ".crux/audit.log"},
 		},
 		Context: ContextConfig{
-			TotalBudget: 8000,
-			WorldState:  300,
-			DecisionRAG: 1500,
-			Summary:     3000,
-			Reserve:     3200,
+			TotalBudget:  8000,
+			WorldState:   300,
+			DecisionRAG:  1500,
+			Summary:      3000,
+			Reserve:      3200,
+			ReadyTimeout: "20s",
 		},
 	}
 }

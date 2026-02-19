@@ -66,7 +66,13 @@ func (p *Plugin) LaunchCmd(cfg plugin.AgentConfig) (string, []string, error) {
 // shows a Claude Code ready prompt (">" or "claude>").
 func (p *Plugin) DetectReady(paneContent string) bool {
 	line := lastNonEmptyLine(paneContent)
-	return isReadyPrompt(line)
+	if isReadyPrompt(line) {
+		return true
+	}
+	if p.DetectBusy(paneContent) {
+		return false
+	}
+	return isReadySignature(paneContent)
 }
 
 // DetectBusy returns true if the tail of pane content contains spinner

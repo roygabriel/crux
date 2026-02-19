@@ -44,3 +44,4 @@ security:
 #   decision_rag: 1500
 #   summary: 3000
 #   reserve: 3200
+#   ready_timeout: 20s

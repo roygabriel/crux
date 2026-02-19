@@ -134,6 +134,7 @@ func TestDetectReady(t *testing.T) {
 	}{
 		{"prompt-arrow", "some output\n>\n", true},
 		{"prompt-gemini", "some output\ngemini>\n", true},
+		{"startup-ui-signature", "? for shortcuts\n*   Type your message or @path/to/file\n~/space-invaders (master*)        /model Auto (Gemini 3)", true},
 		{"prompt-arrow-trailing-space", "some output\n>  \n", true},
 		{"prompt-with-ansi", "some output\n\x1b[32m>\x1b[0m\n", true},
 		{"busy-spinner", "some output\n⠋ Thinking...\n", false},
@@ -406,9 +407,9 @@ func TestParseOutput(t *testing.T) {
 			wantComplete: true,
 		},
 		{
-			name:        "with-errors",
-			paneContent: "Error: compilation failed\nerror: test failed\n>\n",
-			wantErrors:  2,
+			name:         "with-errors",
+			paneContent:  "Error: compilation failed\nerror: test failed\n>\n",
+			wantErrors:   2,
 			wantComplete: true,
 		},
 		{

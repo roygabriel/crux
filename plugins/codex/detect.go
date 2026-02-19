@@ -34,6 +34,10 @@ var (
 	// fileChangedRe extracts file paths from modification notices in
 	// Codex CLI output (e.g. "Applied edit to `path/file.go`").
 	fileChangedRe = regexp.MustCompile("(?mi)(?:Created|Updated|Modified|Wrote(?: to)?|Edited|Applied edit to)\\s+`?([^\\s`'\"]+)`?")
+
+	// readySignatureRe matches startup UI hints that indicate Codex is ready
+	// for input even when the pane's final line is not a literal prompt.
+	readySignatureRe = regexp.MustCompile(`(?i)(?:openai codex\s*\(v[0-9]|>_ openai codex)`)
 )
 
 // stripANSI removes ANSI escape sequences from s.
@@ -66,6 +70,13 @@ func lastLines(s string, n int) string {
 // isReadyPrompt reports whether line matches the Codex CLI ready prompt.
 func isReadyPrompt(line string) bool {
 	return line == ">" || line == "codex>"
+}
+
+// isReadySignature reports whether pane content includes known startup
+// markers emitted by Codex's interactive shell when it is ready.
+func isReadySignature(s string) bool {
+	tail := stripANSI(strings.ToLower(lastLines(s, 30)))
+	return readySignatureRe.MatchString(tail)
 }
 
 // parseRetryDuration extracts a retry duration from s, returning

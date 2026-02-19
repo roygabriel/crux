@@ -154,13 +154,15 @@ func (n *noopDecisionSearcher) SemanticSearch(_ context.Context, _ string, _ int
 
 type noopWorkNotes struct{}
 
-func (n *noopWorkNotes) Read(_ string) (*worknotes.WorkNotes, error)                    { return &worknotes.WorkNotes{}, nil }
-func (n *noopWorkNotes) Init(_, _ string) error                                         { return nil }
-func (n *noopWorkNotes) AppendDecision(_, _, _ string) error                             { return nil }
-func (n *noopWorkNotes) AppendSession(_ string, _ worknotes.SessionLogEntry) error       { return nil }
-func (n *noopWorkNotes) UpdatePromptProgress(_ string, _ int, _ bool) error              { return nil }
-func (n *noopWorkNotes) UpdateStatus(_, _ string) error                                  { return nil }
-func (n *noopWorkNotes) Render(_ *worknotes.WorkNotes) string                            { return "" }
+func (n *noopWorkNotes) Read(_ string) (*worknotes.WorkNotes, error) {
+	return &worknotes.WorkNotes{}, nil
+}
+func (n *noopWorkNotes) Init(_, _ string) error                                    { return nil }
+func (n *noopWorkNotes) AppendDecision(_, _, _ string) error                       { return nil }
+func (n *noopWorkNotes) AppendSession(_ string, _ worknotes.SessionLogEntry) error { return nil }
+func (n *noopWorkNotes) UpdatePromptProgress(_ string, _ int, _ bool) error        { return nil }
+func (n *noopWorkNotes) UpdateStatus(_, _ string) error                            { return nil }
+func (n *noopWorkNotes) Render(_ *worknotes.WorkNotes) string                      { return "" }
 
 type noopBankSummarizer struct{}
 
@@ -264,6 +266,12 @@ type mockIdlePlugin struct {
 
 func (m *mockIdlePlugin) DetectReady(_ string) bool { return true }
 
+type mockBusyPlugin struct {
+	mockPlugin
+}
+
+func (m *mockBusyPlugin) DetectBusy(_ string) bool { return true }
+
 func TestOrchestrator_DispatchGracePeriod(t *testing.T) {
 	dir := setupTestDir(t)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -357,5 +365,158 @@ func TestOrchestrator_DispatchGracePeriod(t *testing.T) {
 	}
 	if agentState.Status != types.StatusBusy {
 		t.Errorf("agent status = %q after grace period tick, want %q", agentState.Status, types.StatusBusy)
+	}
+}
+
+func TestOrchestrator_ReadyFallbackAfterTimeout(t *testing.T) {
+	dir := setupTestDir(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	cmd := &fakeCommander{}
+	sm := tmux.NewSessionManager(cmd, logger)
+	pm := tmux.NewPaneManager(cmd, logger)
+
+	pluginReg := plugin.NewRegistry()
+	_ = pluginReg.Register("claude", func() plugin.AgentPlugin {
+		return &mockPlugin{
+			name: "claude",
+			caps: []plugin.Capability{plugin.CapCodeGen},
+		}
+	})
+
+	registry := agent.NewRegistry(sm, pm, pluginReg, logger)
+	watcher := tmux.NewWatcher(pm, 100*time.Millisecond, logger)
+	specDir := filepath.Join(dir, "phases")
+	gateRunner := phase.NewGateRunner(dir, 10*time.Second, logger)
+	engine, err := phase.NewEngine(specDir, gateRunner, nil, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion := phase.NewCompletionHandler(engine, gateRunner, &noopDecisionRecorder{}, &noopWorkNotes{}, logger)
+	contextBld := phase.NewContextBuilder(&noopDecisionSearcher{}, &noopWorkNotes{}, &noopBankSummarizer{}, logger)
+	tracker := phase.NewTracker(engine, logger)
+	sessionMgr := session.NewManager(filepath.Join(dir, "sessions"), nil, logger)
+	notesMgr := worknotes.NewManager(filepath.Join(dir, "notes"), logger)
+	messenger := agent.NewMessenger(pm, registry, logger)
+
+	cfg := &config.Config{
+		Project: config.ProjectConfig{Name: "test", Root: dir, StateDir: dir},
+	}
+	orch := orchestrator.New(cfg, registry, engine, completion, contextBld, tracker,
+		watcher, messenger, sessionMgr, notesMgr, nil, logger)
+	orch.SetReadyTimeout(50 * time.Millisecond)
+
+	a := types.Agent{
+		ID:         "claude-1",
+		Name:       "claude-1",
+		Plugin:     "claude",
+		Role:       "engineer",
+		Permission: "standard",
+		SessionID:  "test",
+	}
+	if err := registry.Spawn(context.Background(), a); err != nil {
+		t.Fatal(err)
+	}
+
+	orch.SetTestPaneContent("claude-1", "startup banner")
+	orch.SetTestFirstContentAt("claude-1", time.Now().Add(-time.Second))
+
+	if !orch.IsAgentReadyForDispatch("claude-1") {
+		t.Fatal("expected dispatch readiness fallback to allow agent after timeout")
+	}
+}
+
+func TestOrchestrator_ReadyFallbackBlockedByBusy(t *testing.T) {
+	dir := setupTestDir(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	cmd := &fakeCommander{}
+	sm := tmux.NewSessionManager(cmd, logger)
+	pm := tmux.NewPaneManager(cmd, logger)
+
+	pluginReg := plugin.NewRegistry()
+	_ = pluginReg.Register("claude", func() plugin.AgentPlugin {
+		return &mockBusyPlugin{
+			mockPlugin: mockPlugin{
+				name: "claude",
+				caps: []plugin.Capability{plugin.CapCodeGen},
+			},
+		}
+	})
+
+	registry := agent.NewRegistry(sm, pm, pluginReg, logger)
+	watcher := tmux.NewWatcher(pm, 100*time.Millisecond, logger)
+	specDir := filepath.Join(dir, "phases")
+	gateRunner := phase.NewGateRunner(dir, 10*time.Second, logger)
+	engine, err := phase.NewEngine(specDir, gateRunner, nil, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion := phase.NewCompletionHandler(engine, gateRunner, &noopDecisionRecorder{}, &noopWorkNotes{}, logger)
+	contextBld := phase.NewContextBuilder(&noopDecisionSearcher{}, &noopWorkNotes{}, &noopBankSummarizer{}, logger)
+	tracker := phase.NewTracker(engine, logger)
+	sessionMgr := session.NewManager(filepath.Join(dir, "sessions"), nil, logger)
+	notesMgr := worknotes.NewManager(filepath.Join(dir, "notes"), logger)
+	messenger := agent.NewMessenger(pm, registry, logger)
+
+	cfg := &config.Config{
+		Project: config.ProjectConfig{Name: "test", Root: dir, StateDir: dir},
+	}
+	orch := orchestrator.New(cfg, registry, engine, completion, contextBld, tracker,
+		watcher, messenger, sessionMgr, notesMgr, nil, logger)
+	orch.SetReadyTimeout(50 * time.Millisecond)
+
+	a := types.Agent{
+		ID:         "claude-1",
+		Name:       "claude-1",
+		Plugin:     "claude",
+		Role:       "engineer",
+		Permission: "standard",
+		SessionID:  "test",
+	}
+	if err := registry.Spawn(context.Background(), a); err != nil {
+		t.Fatal(err)
+	}
+
+	orch.SetTestPaneContent("claude-1", "startup banner")
+	orch.SetTestFirstContentAt("claude-1", time.Now().Add(-time.Second))
+
+	if orch.IsAgentReadyForDispatch("claude-1") {
+		t.Fatal("expected busy agent to remain non-dispatchable during fallback")
+	}
+}
+
+func TestOrchestrator_SaveSessionPersistsAgentState(t *testing.T) {
+	dir := setupTestDir(t)
+	orch := buildTestOrchestrator(t, dir)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := orch.Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	orch.WorldState().UpdateAgent("claude-1", orchestrator.AgentState{
+		Status:        types.StatusBusy,
+		PromptDisplay: "Phase 1A P1",
+		Task:          "implement parser",
+		LastActive:    time.Now().UTC(),
+	})
+	orch.SaveSessionForTest()
+
+	sessionMgr := session.NewManager(filepath.Join(dir, "sessions"), nil, nil)
+	sc, err := sessionMgr.ResumeLatest()
+	if err != nil {
+		t.Fatalf("ResumeLatest() error = %v", err)
+	}
+	got, ok := sc.Agents["claude-1"]
+	if !ok {
+		t.Fatal("expected claude-1 in persisted session agents")
+	}
+	if got.Status != string(types.StatusBusy) {
+		t.Fatalf("persisted status = %q, want %q", got.Status, types.StatusBusy)
+	}
+	if got.CurrentTask != "implement parser" {
+		t.Fatalf("persisted current_task = %q, want %q", got.CurrentTask, "implement parser")
 	}
 }

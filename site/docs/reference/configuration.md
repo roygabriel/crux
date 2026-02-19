@@ -88,6 +88,9 @@ Environment overrides: `CRUX_SECURITY_AUDIT_LOG`, `CRUX_SECURITY_MAX_CMDS_PER_MI
 | `context.decision_rag` | int | 0 | Token budget for decision RAG context |
 | `context.summary` | int | 0 | Token budget for work notes summary |
 | `context.reserve` | int | 0 | Token budget reserved for prompt structure |
+| `context.ready_timeout` | string | `"20s"` | Wait for explicit ready detection before fallback dispatch readiness |
+
+Environment override: `CRUX_CONTEXT_READY_TIMEOUT`
 
 ## Generic Plugins
 

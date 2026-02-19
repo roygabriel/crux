@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -142,6 +143,9 @@ type ContextConfig struct {
 	Summary int `yaml:"summary" json:"summary,omitempty"`
 	// Reserve is the token budget reserved for prompt structure.
 	Reserve int `yaml:"reserve" json:"reserve,omitempty"`
+	// ReadyTimeout is how long to wait for explicit plugin ready detection
+	// before allowing fallback dispatch readiness checks.
+	ReadyTimeout string `yaml:"ready_timeout" json:"ready_timeout,omitempty"`
 }
 
 // Load reads a YAML configuration file, applies environment variable
@@ -227,6 +231,15 @@ func (c *Config) Validate() error {
 	if c.Security.MaxFilesPerSession < 0 {
 		return fmt.Errorf("security.max_files_per_session must be non-negative")
 	}
+	if strings.TrimSpace(c.Context.ReadyTimeout) != "" {
+		d, err := time.ParseDuration(strings.TrimSpace(c.Context.ReadyTimeout))
+		if err != nil {
+			return fmt.Errorf("context.ready_timeout: invalid duration %q", c.Context.ReadyTimeout)
+		}
+		if d < 0 {
+			return fmt.Errorf("context.ready_timeout must be non-negative")
+		}
+	}
 
 	return nil
 }
@@ -236,15 +249,16 @@ func (c *Config) Validate() error {
 // CRUX_PROJECT_NAME -> project.name, CRUX_MEMORY_SQLITE_PATH -> memory.sqlite_path.
 func applyEnvOverrides(cfg *Config) {
 	overrides := map[string]*string{
-		"CRUX_PROJECT_NAME":      &cfg.Project.Name,
-		"CRUX_PROJECT_ROOT":      &cfg.Project.Root,
-		"CRUX_PROJECT_STATE_DIR": &cfg.Project.StateDir,
+		"CRUX_PROJECT_NAME":              &cfg.Project.Name,
+		"CRUX_PROJECT_ROOT":              &cfg.Project.Root,
+		"CRUX_PROJECT_STATE_DIR":         &cfg.Project.StateDir,
 		"CRUX_MEMORY_SQLITE_PATH":        &cfg.Memory.SQLitePath,
 		"CRUX_MEMORY_VECTOR_DIR":         &cfg.Memory.VectorDir,
 		"CRUX_MEMORY_EMBEDDING_PROVIDER": &cfg.Memory.EmbeddingProvider,
 		"CRUX_MEMORY_EMBEDDING_MODEL":    &cfg.Memory.EmbeddingModel,
-		"CRUX_PHASES_SPEC_DIR":    &cfg.Phases.SpecDir,
-		"CRUX_SECURITY_AUDIT_LOG": &cfg.Security.AuditLog,
+		"CRUX_PHASES_SPEC_DIR":           &cfg.Phases.SpecDir,
+		"CRUX_SECURITY_AUDIT_LOG":        &cfg.Security.AuditLog,
+		"CRUX_CONTEXT_READY_TIMEOUT":     &cfg.Context.ReadyTimeout,
 	}
 
 	for env, field := range overrides {

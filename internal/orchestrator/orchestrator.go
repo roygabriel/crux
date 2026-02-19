@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,8 @@ import (
 )
 
 const defaultPollInterval = 2 * time.Second
+const defaultReadyTimeout = 20 * time.Second
+const noAvailableAgentLogInterval = 10 * time.Second
 
 // SecurityGate checks permission before executing an action.
 type SecurityGate interface {
@@ -74,7 +77,9 @@ type Orchestrator struct {
 	// agentReady tracks whether each agent has shown a ready prompt since spawn.
 	mu                 sync.Mutex
 	paneContent        map[types.AgentID]string
+	firstContentAt     map[types.AgentID]time.Time
 	agentReady         map[types.AgentID]bool
+	fallbackReadyLog   map[types.AgentID]bool
 	orchestratorPrompt string
 
 	// prevStatus tracks previous agent status for transition detection.
@@ -84,6 +89,8 @@ type Orchestrator struct {
 	// Used to suppress premature Busy→Idle transitions during the grace period.
 	lastDispatchTime map[types.AgentID]time.Time
 	dispatchGrace    time.Duration
+	readyTimeout     time.Duration
+	lastNoAvailLogAt time.Time
 
 	// session holds the active session context.
 	session *session.SessionContext
@@ -125,6 +132,12 @@ func New(
 		logger,
 	)
 	assigner := NewAssigner(registry, engine, ws, logger)
+	readyTimeout := defaultReadyTimeout
+	if cfg != nil {
+		if parsed, err := time.ParseDuration(strings.TrimSpace(cfg.Context.ReadyTimeout)); err == nil && parsed > 0 {
+			readyTimeout = parsed
+		}
+	}
 
 	o := &Orchestrator{
 		cfg:              cfg,
@@ -145,10 +158,13 @@ func New(
 		logger:           logger,
 		pollInterval:     defaultPollInterval,
 		paneContent:      make(map[types.AgentID]string),
+		firstContentAt:   make(map[types.AgentID]time.Time),
 		agentReady:       make(map[types.AgentID]bool),
+		fallbackReadyLog: make(map[types.AgentID]bool),
 		prevStatus:       make(map[types.AgentID]types.AgentStatus),
 		lastDispatchTime: make(map[types.AgentID]time.Time),
 		dispatchGrace:    5 * time.Second,
+		readyTimeout:     readyTimeout,
 	}
 	assigner.SetReadyGate(o.isAgentReadyForDispatch)
 	return o
@@ -317,7 +333,7 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 		newStatus := o.detectStatus(inst, content)
 		prev := o.prevStatus[id]
 
-		if inst.Plugin.DetectReady(content) {
+		if newStatus == types.StatusIdle && inst.Plugin.DetectReady(content) {
 			o.markAgentReady(id)
 		}
 
@@ -358,6 +374,8 @@ func (o *Orchestrator) tick(ctx context.Context) error {
 		agentID, err := o.assigner.AssignNext(ctx)
 		if err != nil && err != ErrNoAvailableAgent {
 			o.logger.Warn("assignment error", "error", err)
+		} else if err == ErrNoAvailableAgent {
+			o.logNoAvailableAgents(agents)
 		} else if err == nil && agentID != "" {
 			if dispErr := o.dispatchPrompt(ctx, agentID); dispErr != nil {
 				o.logger.Warn("dispatch error", "agent_id", agentID, "error", dispErr)
@@ -772,6 +790,10 @@ func (o *Orchestrator) spawnAgents(ctx context.Context) error {
 		}
 		o.prevStatus[a.ID] = types.StatusIdle
 		o.setAgentReady(a.ID, false)
+		o.mu.Lock()
+		o.firstContentAt[a.ID] = time.Time{}
+		o.fallbackReadyLog[a.ID] = false
+		o.mu.Unlock()
 	}
 	return nil
 }
@@ -784,6 +806,11 @@ func (o *Orchestrator) startWatchers(ctx context.Context) {
 		o.watcher.Watch(ctx, paneID, func(content string) {
 			o.mu.Lock()
 			o.paneContent[id] = content
+			if strings.TrimSpace(content) != "" {
+				if o.firstContentAt[id].IsZero() {
+					o.firstContentAt[id] = time.Now().UTC()
+				}
+			}
 			o.mu.Unlock()
 		})
 	}
@@ -797,7 +824,41 @@ func (o *Orchestrator) IsAgentReady(id types.AgentID) bool {
 }
 
 func (o *Orchestrator) isAgentReadyForDispatch(id types.AgentID) bool {
-	return o.IsAgentReady(id)
+	if o.IsAgentReady(id) {
+		return true
+	}
+
+	o.mu.Lock()
+	content := o.paneContent[id]
+	firstSeen := o.firstContentAt[id]
+	o.mu.Unlock()
+
+	if strings.TrimSpace(content) == "" || firstSeen.IsZero() {
+		return false
+	}
+	if time.Since(firstSeen) < o.readyTimeout {
+		return false
+	}
+
+	inst, err := o.registry.Get(id)
+	if err != nil {
+		return false
+	}
+	if _, limited := inst.Plugin.DetectRateLimit(content); limited {
+		return false
+	}
+	if _, isErr := inst.Plugin.DetectError(content); isErr {
+		return false
+	}
+	if _, isPrompt := inst.Plugin.DetectPrompt(content); isPrompt {
+		return false
+	}
+	if inst.Plugin.DetectBusy(content) {
+		return false
+	}
+
+	o.logFallbackReadiness(id)
+	return true
 }
 
 func (o *Orchestrator) setAgentReady(id types.AgentID, ready bool) {
@@ -819,6 +880,65 @@ func (o *Orchestrator) markAgentReady(id types.AgentID) {
 	}
 	o.logger.Info("agent ready for dispatch",
 		"agent_id", id,
+	)
+}
+
+func (o *Orchestrator) logNoAvailableAgents(agents []*agent.AgentInstance) {
+	now := time.Now()
+	if !o.lastNoAvailLogAt.IsZero() && now.Sub(o.lastNoAvailLogAt) < noAvailableAgentLogInterval {
+		return
+	}
+	o.lastNoAvailLogAt = now
+
+	var idle, idleReady, idleWaiting, busy, prompted, failed, limited, stopped int
+	for _, inst := range agents {
+		switch inst.Agent.Status {
+		case types.StatusIdle:
+			idle++
+			if o.isAgentReadyForDispatch(inst.Agent.ID) {
+				idleReady++
+			} else {
+				idleWaiting++
+			}
+		case types.StatusBusy:
+			busy++
+		case types.StatusPrompted:
+			prompted++
+		case types.StatusError:
+			failed++
+		case types.StatusRateLimited:
+			limited++
+		case types.StatusStopped:
+			stopped++
+		}
+	}
+
+	o.logger.Info("assignment blocked: no dispatchable idle agents",
+		"total_agents", len(agents),
+		"idle", idle,
+		"idle_ready", idleReady,
+		"idle_waiting_readiness", idleWaiting,
+		"busy", busy,
+		"prompted", prompted,
+		"error", failed,
+		"rate_limited", limited,
+		"stopped", stopped,
+	)
+}
+
+func (o *Orchestrator) logFallbackReadiness(id types.AgentID) {
+	o.mu.Lock()
+	if o.fallbackReadyLog[id] {
+		o.mu.Unlock()
+		return
+	}
+	o.fallbackReadyLog[id] = true
+	firstSeen := o.firstContentAt[id]
+	o.mu.Unlock()
+
+	o.logger.Info("agent dispatch-ready via startup timeout fallback",
+		"agent_id", id,
+		"waited", time.Since(firstSeen).Round(time.Second),
 	)
 }
 
@@ -849,6 +969,27 @@ func (o *Orchestrator) saveSession() {
 	prompt := o.engine.CurrentPrompt()
 	if prompt != nil {
 		o.session.PromptProgress = prompt.PromptNumber
+	}
+
+	snap := o.worldState.Snapshot()
+	if o.session.Agents == nil {
+		o.session.Agents = make(map[string]session.AgentState)
+	}
+	for id, st := range snap.Agents {
+		task := st.Task
+		if task == "" {
+			task = st.PromptDisplay
+		}
+		o.session.Agents[string(id)] = session.AgentState{
+			Status:      string(st.Status),
+			CurrentTask: task,
+			UpdatedAt:   st.LastActive,
+		}
+	}
+	for id := range o.session.Agents {
+		if _, ok := snap.Agents[types.AgentID(id)]; !ok {
+			delete(o.session.Agents, id)
+		}
 	}
 
 	if err := o.sessionMgr.Save(o.session); err != nil {

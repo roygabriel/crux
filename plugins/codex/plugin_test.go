@@ -143,6 +143,7 @@ func TestDetectReady(t *testing.T) {
 	}{
 		{"prompt-arrow", "some output\n>\n", true},
 		{"prompt-codex", "some output\ncodex>\n", true},
+		{"startup-ui-signature", "╭──────────────────────────────────────────────────╮\n│ >_ OpenAI Codex (v0.104.0)                       │\n╰──────────────────────────────────────────────────╯", true},
 		{"prompt-arrow-trailing-space", "some output\n>  \n", true},
 		{"prompt-with-ansi", "some output\n\x1b[32m>\x1b[0m\n", true},
 		{"busy-spinner", "some output\n⠋ Thinking...\n", false},
@@ -410,9 +411,9 @@ func TestParseOutput(t *testing.T) {
 			wantComplete: true,
 		},
 		{
-			name:        "with-errors",
-			paneContent: "Error: compilation failed\nerror: test failed\n>\n",
-			wantErrors:  2,
+			name:         "with-errors",
+			paneContent:  "Error: compilation failed\nerror: test failed\n>\n",
+			wantErrors:   2,
 			wantComplete: true,
 		},
 		{
@@ -469,8 +470,8 @@ func TestCapabilities(t *testing.T) {
 
 	caps := newPlugin().Capabilities()
 	want := map[plugin.Capability]bool{
-		plugin.CapCodeGen:  true,
-		plugin.CapFileEdit: true,
+		plugin.CapCodeGen:   true,
+		plugin.CapFileEdit:  true,
 		plugin.CapShellExec: true,
 	}
 

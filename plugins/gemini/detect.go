@@ -34,6 +34,10 @@ var (
 	// fileChangedRe extracts file paths from modification notices in
 	// Gemini CLI output (e.g. "Created `path/file.go`").
 	fileChangedRe = regexp.MustCompile("(?mi)(?:Created|Updated|Modified|Wrote(?: to)?|Edited|Applied edit to)\\s+`?([^\\s`'\"]+)`?")
+
+	// readySignatureRe matches startup UI hints that indicate Gemini CLI is
+	// ready for user input even if the last line is not just ">".
+	readySignatureRe = regexp.MustCompile(`(?i)(?:type your message or @path/to/file|\? for shortcuts|/model auto \(gemini)`)
 )
 
 // stripANSI removes ANSI escape sequences from s.
@@ -66,6 +70,13 @@ func lastLines(s string, n int) string {
 // isReadyPrompt reports whether line matches the Gemini CLI ready prompt.
 func isReadyPrompt(line string) bool {
 	return line == ">" || line == "gemini>"
+}
+
+// isReadySignature reports whether pane content includes known startup
+// markers emitted by Gemini CLI when it is idle and interactive.
+func isReadySignature(s string) bool {
+	tail := stripANSI(strings.ToLower(lastLines(s, 40)))
+	return readySignatureRe.MatchString(tail)
 }
 
 // parseRetryDuration extracts a retry duration from s, returning

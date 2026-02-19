@@ -362,6 +362,75 @@ func TestValidateNegativeRateLimits(t *testing.T) {
 	}
 }
 
+func TestValidateReadyTimeout(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		value  string
+		errSub string
+	}{
+		{
+			name:   "valid duration",
+			value:  "45s",
+			errSub: "",
+		},
+		{
+			name:   "invalid duration",
+			value:  "abc",
+			errSub: "context.ready_timeout: invalid duration",
+		},
+		{
+			name:   "negative duration",
+			value:  "-5s",
+			errSub: "context.ready_timeout must be non-negative",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := DefaultConfig()
+			cfg.Context.ReadyTimeout = tt.value
+			err := cfg.Validate()
+			if tt.errSub == "" && err != nil {
+				t.Fatalf("Validate() unexpected error: %v", err)
+			}
+			if tt.errSub != "" {
+				if err == nil {
+					t.Fatal("Validate() expected error, got nil")
+				}
+				if !contains(err.Error(), tt.errSub) {
+					t.Fatalf("Validate() error = %q, want substring %q", err.Error(), tt.errSub)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadContextReadyTimeoutEnvOverride(t *testing.T) {
+	yaml := `
+project:
+  name: "test"
+  root: "."
+  state_dir: ".crux"
+
+memory:
+  sqlite_path: ".crux/memory.db"
+  vector_dir: ".crux/vectors"
+`
+	path := writeTempYAML(t, yaml)
+	t.Setenv("CRUX_CONTEXT_READY_TIMEOUT", "33s")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Context.ReadyTimeout != "33s" {
+		t.Fatalf("Context.ReadyTimeout = %q, want %q", cfg.Context.ReadyTimeout, "33s")
+	}
+}
+
 func TestDefaultConfigIsValid(t *testing.T) {
 	t.Parallel()
 

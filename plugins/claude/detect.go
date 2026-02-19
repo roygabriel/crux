@@ -42,6 +42,10 @@ var (
 	// permissionPromptRe matches Claude Code's permission approval prompts
 	// (e.g. "Allow Edit file.go? (Y/n)").
 	permissionPromptRe = regexp.MustCompile(`(?i)(?:allow|approve|permit)\s+.+\?\s*\(?[Yy]/[Nn]\)?`)
+
+	// readySignatureRe matches startup UI hints that indicate Claude is at
+	// the interactive prompt even when the final line is not a raw ">".
+	readySignatureRe = regexp.MustCompile(`(?i)(?:try "how does <filepath> work\?"|bypass permissions on|claude code v[0-9])`)
 )
 
 // stripANSI removes ANSI escape sequences from s.
@@ -74,6 +78,13 @@ func lastLines(s string, n int) string {
 // isReadyPrompt reports whether line matches the Claude Code ready prompt.
 func isReadyPrompt(line string) bool {
 	return line == ">" || line == "claude>"
+}
+
+// isReadySignature reports whether pane content includes known ready-state
+// startup markers emitted by Claude Code's interactive shell.
+func isReadySignature(s string) bool {
+	tail := stripANSI(strings.ToLower(lastLines(s, 30)))
+	return readySignatureRe.MatchString(tail)
 }
 
 // parseRetryDuration extracts a retry duration from s, returning

@@ -115,15 +115,15 @@ func TestLogsPanel_ViewEmpty(t *testing.T) {
 	}
 }
 
-func TestLogsPanel_HandleKey_F_EntersFilterMode(t *testing.T) {
+func TestLogsPanel_HandleKeySlash_EntersFilterMode(t *testing.T) {
 	p := NewLogsPanel(10)
 
-	handled, _ := p.HandleKey("f")
+	handled, _ := p.HandleKey("/")
 	if !handled {
-		t.Error("'f' should be handled")
+		t.Error("'/' should be handled")
 	}
 	if !p.filterMode {
-		t.Error("filterMode should be true after 'f'")
+		t.Error("filterMode should be true after '/'")
 	}
 }
 
@@ -196,7 +196,7 @@ func TestLogsPanel_HandleKey_UnhandledReturnsFalse(t *testing.T) {
 
 func TestLogsPanel_FilterMode_CharAppend(t *testing.T) {
 	p := NewLogsPanel(10)
-	p.HandleKey("f") // enter filter mode
+	p.HandleKey("/") // enter filter mode
 
 	p.HandleKey("e")
 	p.HandleKey("r")
@@ -209,7 +209,7 @@ func TestLogsPanel_FilterMode_CharAppend(t *testing.T) {
 
 func TestLogsPanel_FilterMode_Backspace(t *testing.T) {
 	p := NewLogsPanel(10)
-	p.HandleKey("f")
+	p.HandleKey("/")
 	p.HandleKey("a")
 	p.HandleKey("b")
 	p.HandleKey("backspace")
@@ -221,7 +221,7 @@ func TestLogsPanel_FilterMode_Backspace(t *testing.T) {
 
 func TestLogsPanel_FilterMode_BackspaceEmpty(t *testing.T) {
 	p := NewLogsPanel(10)
-	p.HandleKey("f")
+	p.HandleKey("/")
 	p.HandleKey("backspace") // no panic on empty
 
 	if p.filterInput != "" {
@@ -238,7 +238,7 @@ func TestLogsPanel_FilterMode_EnterApplies(t *testing.T) {
 	}
 	p.ScrollUp(5)
 
-	p.HandleKey("f")
+	p.HandleKey("/")
 	p.HandleKey("e")
 	p.HandleKey("r")
 	p.HandleKey("r")
@@ -260,7 +260,7 @@ func TestLogsPanel_FilterMode_EnterApplies(t *testing.T) {
 
 func TestLogsPanel_FilterMode_EscClears(t *testing.T) {
 	p := NewLogsPanel(10)
-	p.HandleKey("f")
+	p.HandleKey("/")
 	p.HandleKey("x")
 	p.HandleKey("esc")
 
@@ -378,11 +378,11 @@ func TestLogsPanel_ViewFilteredReducesEntries(t *testing.T) {
 	}
 }
 
-func TestLogsPanel_F_PreservesExistingFilter(t *testing.T) {
+func TestLogsPanel_SlashPreservesExistingFilter(t *testing.T) {
 	p := NewLogsPanel(10)
 	p.filterActive = "existing"
 
-	p.HandleKey("f")
+	p.HandleKey("/")
 	if p.filterInput != "existing" {
 		t.Errorf("filterInput = %q, want %q", p.filterInput, "existing")
 	}

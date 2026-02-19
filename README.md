@@ -416,6 +416,24 @@ crux decisions search "query"      Semantic search across decision journal
 crux notes show 2a                 Display work notes for a phase
 crux replay <session-id>           Replay a session transcript
 crux audit --since 24h             View audit log with filters
+crux plan                          Interactive planning board
+```
+
+### Dashboard Keys (`crux start`)
+
+```
+Global:   q quit | ? help | tab / shift+tab focus panel
+Agents:   j/k move | s pause/resume | x kill
+Workspace:o output | d details | n notes | i message | a force-advance phase
+Logs:     j/k scroll | pgup/pgdn page | / filter | g/G oldest/newest
+```
+
+### Planner Keys (`crux plan`)
+
+```
+Global:   q quit | ? help | tab focus | ctrl+g generate phases | ctrl+n reset
+Panels:   j/k scroll | pgup/pgdn page
+Input:    enter send message
 ```
 
 ## Design Principles

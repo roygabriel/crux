@@ -30,9 +30,9 @@ func TestContentPanel_TabSwitching(t *testing.T) {
 		key     string
 		wantTab ContentTab
 	}{
-		{"1", TabOutput},
-		{"2", TabDetails},
-		{"3", TabDecisions},
+		{"o", TabOutput},
+		{"d", TabDetails},
+		{"n", TabDecisions},
 	}
 
 	for _, tt := range tests {
@@ -66,7 +66,7 @@ func TestContentPanel_TabSwitchResetsScroll(t *testing.T) {
 	}
 
 	// Switch tab resets.
-	p.HandleKey("2")
+	p.HandleKey("d")
 	if p.scrollPos != 0 {
 		t.Errorf("scrollPos = %d after tab switch, want 0", p.scrollPos)
 	}
@@ -163,7 +163,7 @@ func TestContentPanel_OutputTab(t *testing.T) {
 	p := NewContentPanel()
 	p.SetSize(80, 20)
 	p.SetAgent(contentSnapshot())
-	p.HandleKey("1")
+	p.HandleKey("o")
 
 	view := p.View()
 	if !strings.Contains(view, "line 1") {
@@ -177,7 +177,7 @@ func TestContentPanel_OutputTabEmptyContent(t *testing.T) {
 	snap := contentSnapshot()
 	snap.PaneContent = ""
 	p.SetAgent(snap)
-	p.HandleKey("1")
+	p.HandleKey("o")
 
 	view := p.View()
 	if !strings.Contains(view, "Waiting for output") {
@@ -189,7 +189,7 @@ func TestContentPanel_DetailsTab(t *testing.T) {
 	p := NewContentPanel()
 	p.SetSize(80, 20)
 	p.SetAgent(contentSnapshot())
-	p.HandleKey("2")
+	p.HandleKey("d")
 
 	view := p.View()
 	checks := []string{"agent-1", "claude", "engineer", "write", "implement auth"}
@@ -204,7 +204,7 @@ func TestContentPanel_DecisionsTab(t *testing.T) {
 	p := NewContentPanel()
 	p.SetSize(80, 30)
 	p.SetAgent(contentSnapshot())
-	p.HandleKey("3")
+	p.HandleKey("n")
 
 	view := p.View()
 	checks := []string{"Recent Decisions", "add tests", "Work Notes", "In progress"}
@@ -222,7 +222,7 @@ func TestContentPanel_DecisionsTabEmpty(t *testing.T) {
 	snap.Decisions = nil
 	snap.WorkNotesInfo = ""
 	p.SetAgent(snap)
-	p.HandleKey("3")
+	p.HandleKey("n")
 
 	view := p.View()
 	if strings.Count(view, "(none)") < 2 {
@@ -236,9 +236,9 @@ func TestContentPanel_MessageInput(t *testing.T) {
 	p.SetAgent(contentSnapshot())
 
 	// Enter input mode.
-	handled, _ := p.HandleKey("m")
+	handled, _ := p.HandleKey("i")
 	if !handled {
-		t.Fatal("m should be handled")
+		t.Fatal("i should be handled")
 	}
 	if !p.IsInputMode() {
 		t.Fatal("should be in input mode")
@@ -288,7 +288,7 @@ func TestContentPanel_MessageInput(t *testing.T) {
 func TestContentPanel_MessageInputCancel(t *testing.T) {
 	p := NewContentPanel()
 	p.SetAgent(contentSnapshot())
-	p.HandleKey("m")
+	p.HandleKey("i")
 	p.HandleKey("a")
 	p.HandleKey("b")
 
@@ -310,7 +310,7 @@ func TestContentPanel_MessageInputCancel(t *testing.T) {
 func TestContentPanel_MessageInputEmptyNoOp(t *testing.T) {
 	p := NewContentPanel()
 	p.SetAgent(contentSnapshot())
-	p.HandleKey("m")
+	p.HandleKey("i")
 
 	handled, cmd := p.HandleKey("enter")
 	if !handled {
@@ -323,9 +323,9 @@ func TestContentPanel_MessageInputEmptyNoOp(t *testing.T) {
 
 func TestContentPanel_MessageNoAgentNoOp(t *testing.T) {
 	p := NewContentPanel()
-	handled, _ := p.HandleKey("m")
+	handled, _ := p.HandleKey("i")
 	if !handled {
-		t.Fatal("m should be handled even without agent")
+		t.Fatal("i should be handled even without agent")
 	}
 	if p.IsInputMode() {
 		t.Error("should not enter input mode without agent")
@@ -348,7 +348,7 @@ func TestContentPanel_UnhandledKeys(t *testing.T) {
 func TestContentPanel_MultiRuneKeyIgnored(t *testing.T) {
 	p := NewContentPanel()
 	p.SetAgent(contentSnapshot())
-	p.HandleKey("m")
+	p.HandleKey("i")
 	p.HandleKey("tab")
 
 	if p.inputBuffer != "" {
@@ -368,7 +368,7 @@ func TestContentPanel_ViewTabBar(t *testing.T) {
 	if !strings.Contains(view, "Details") {
 		t.Error("tab bar should contain 'Details'")
 	}
-	if !strings.Contains(view, "Decisions") {
+	if !strings.Contains(view, "Notes") {
 		t.Error("tab bar should contain 'Decisions'")
 	}
 }
@@ -379,7 +379,7 @@ func TestContentPanel_ViewInputLine(t *testing.T) {
 	p.SetAgent(contentSnapshot())
 
 	view := p.View()
-	if !strings.Contains(view, "press m to type") {
+	if !strings.Contains(view, "press i to type") {
 		t.Error("view should contain input hint")
 	}
 }
@@ -387,7 +387,7 @@ func TestContentPanel_ViewInputLine(t *testing.T) {
 func TestContentPanel_BackspaceEmpty(t *testing.T) {
 	p := NewContentPanel()
 	p.SetAgent(contentSnapshot())
-	p.HandleKey("m")
+	p.HandleKey("i")
 	p.HandleKey("backspace")
 
 	if p.inputBuffer != "" {

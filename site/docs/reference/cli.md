@@ -30,6 +30,45 @@ crux start
 
 Launches tmux sessions for each configured agent, assigns prompts from phase docs, and begins the continuous poll-verify-advance loop.
 
+### `crux start` dashboard keys
+
+| Scope | Keys | Action |
+|------|------|--------|
+| Global | `q` | Quit dashboard and request graceful shutdown |
+| Global | `?` | Toggle keyboard help overlay |
+| Global | `tab` / `shift+tab` | Cycle focused panel |
+| Agents panel | `j` / `k` | Move selection |
+| Agents panel | `s` | Pause/resume selected agent |
+| Agents panel | `x` | Kill selected agent |
+| Workspace panel | `o` / `d` / `n` | Switch Output / Details / Notes tabs |
+| Workspace panel | `i` | Enter message input mode |
+| Workspace panel | `a` | Force-advance current phase (with confirmation) |
+| Logs panel | `/` | Enter filter mode |
+| Logs panel | `g` / `G` | Jump to oldest / newest logs |
+
+## `crux plan`
+
+Start the interactive planning board.
+
+```bash
+crux plan
+```
+
+Builds phase specs and prompts in a dedicated planning TUI backed by the configured planner backend.
+
+### `crux plan` board keys
+
+| Scope | Keys | Action |
+|------|------|--------|
+| Global | `q` | Quit planning board |
+| Global | `?` | Toggle planner key help |
+| Global | `tab` / `shift+tab` | Cycle focused pane |
+| Global | `ctrl+g` | Trigger generation flow (`generate_single_phase`) |
+| Global | `ctrl+n` | Reset planning session state |
+| Timeline/Chat/Status panes | `j` / `k` | Scroll |
+| Timeline/Chat/Status panes | `pgup` / `pgdn` | Page scroll |
+| Input pane | `enter` | Send message |
+
 ## `crux status`
 
 Show the current world state.

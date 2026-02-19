@@ -13,15 +13,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/roygabriel/crux/internal/ui/chrome"
 )
 
 // TUI styles.
 var (
 	userStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("141"))
 	toolStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	statusStyle   = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	inputBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	inputBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
 )
 
 // Minimum debounce interval for glamour re-renders during streaming.
@@ -69,10 +69,20 @@ type initialSendMsg struct {
 	text string
 }
 
+type planPanel int
+
+const (
+	panelTimeline planPanel = iota
+	panelChat
+	panelStatus
+	panelInput
+)
+
 // TUIModel is the bubbletea model for the interactive planning conversation.
 type TUIModel struct {
 	agent       *Agent
 	projectRoot string
+	theme       chrome.Theme
 
 	messages      []chatMessage
 	streaming     bool
@@ -86,13 +96,17 @@ type TUIModel struct {
 	genCurrentPhase string // phase ID currently being generated (e.g. "1A")
 	genInFlight     bool   // true between a generate_single_phase ToolUseMsg and its ToolResultMsg
 
-	viewport viewport.Model
-	input    textarea.Model
-	spinner  spinner.Model
-	width    int
-	height   int
-	ready    bool
-	err      error
+	viewport    viewport.Model // center chat viewport
+	input       textarea.Model
+	spinner     spinner.Model
+	activePanel planPanel
+	leftScroll  int
+	rightScroll int
+	showHelp    bool
+	width       int
+	height      int
+	ready       bool
+	err         error
 
 	renderer   *glamour.TermRenderer
 	lastRender time.Time
@@ -122,11 +136,13 @@ func NewTUIModel(agent *Agent, projectRoot string) TUIModel {
 	return TUIModel{
 		agent:       agent,
 		projectRoot: projectRoot,
+		theme:       chrome.NewTheme(),
 		streamBuf:   &strings.Builder{},
 		viewport:    vp,
 		input:       ta,
 		spinner:     sp,
 		renderer:    renderer,
+		activePanel: panelInput,
 	}
 }
 
@@ -304,10 +320,37 @@ func (m TUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch key {
-	case "ctrl+c", "esc":
+	case "q", "ctrl+c", "esc":
 		return m, tea.Quit
 
-	case "ctrl+r":
+	case "?":
+		m.showHelp = !m.showHelp
+		return m, nil
+
+	case "tab":
+		if !m.streaming {
+			m.activePanel = (m.activePanel + 1) % 4
+			if m.activePanel == panelInput {
+				return m, m.input.Focus()
+			}
+			m.input.Blur()
+		}
+		return m, nil
+
+	case "shift+tab", "backtab":
+		if !m.streaming {
+			m.activePanel--
+			if m.activePanel < panelTimeline {
+				m.activePanel = panelInput
+			}
+			if m.activePanel == panelInput {
+				return m, m.input.Focus()
+			}
+			m.input.Blur()
+		}
+		return m, nil
+
+	case "ctrl+n":
 		m.agent.Reset()
 		m.messages = nil
 		m.streaming = false
@@ -319,17 +362,35 @@ func (m TUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.genCurrentPhase = ""
 		m.genInFlight = false
 		m.err = nil
+		m.leftScroll = 0
+		m.rightScroll = 0
 		m.refreshViewport()
 		return m, m.input.Focus()
 
-	case "ctrl+a":
+	case "ctrl+g":
 		if !m.streaming {
 			return m, m.sendMessageCmd("The plan is approved. Please generate all phase files now using the generate_single_phase tool, one phase at a time.")
 		}
 		return m, nil
 
+	case "j", "down":
+		m.scrollActive(1)
+		return m, nil
+
+	case "k", "up":
+		m.scrollActive(-1)
+		return m, nil
+
+	case "pgdown":
+		m.scrollActive(8)
+		return m, nil
+
+	case "pgup":
+		m.scrollActive(-8)
+		return m, nil
+
 	case "enter":
-		if m.streaming {
+		if m.streaming || m.activePanel != panelInput {
 			return m, nil
 		}
 		val := strings.TrimSpace(m.input.Value())
@@ -340,8 +401,8 @@ func (m TUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.sendMessageCmd(val)
 	}
 
-	// Pass other keys to textarea when not streaming.
-	if !m.streaming {
+	// Pass other keys to textarea when the input dock is focused.
+	if !m.streaming && m.activePanel == panelInput {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
@@ -450,58 +511,105 @@ func (m *TUIModel) autoContinueCmd() tea.Cmd {
 // View implements tea.Model.
 func (m TUIModel) View() string {
 	if !m.ready {
-		return "Initializing planner..."
+		return "Initializing planning board..."
+	}
+	if m.showHelp {
+		return m.helpView()
 	}
 
+	bodyHeight := m.bodyHeight()
+	leftW, centerW, rightW := m.columnWidths()
+	leftInnerW := maxInt(0, leftW-4)
+	centerInnerW := maxInt(0, centerW-4)
+	rightInnerW := maxInt(0, rightW-4)
+	panelInnerH := maxInt(0, bodyHeight-4)
+
+	leftView := m.renderPanel("Timeline", m.panelMeta(panelTimeline), m.timelineView(panelInnerH), leftInnerW, panelInnerH, m.activePanel == panelTimeline)
+	centerView := m.renderPanel("Conversation", m.panelMeta(panelChat), m.viewport.View(), centerInnerW, panelInnerH, m.activePanel == panelChat)
+	rightView := m.renderPanel("Run Status", m.panelMeta(panelStatus), m.statusPaneView(panelInnerH), rightInnerW, panelInnerH, m.activePanel == panelStatus)
+	boards := lipgloss.JoinHorizontal(lipgloss.Top, leftView, centerView, rightView)
+
 	var b strings.Builder
-	b.WriteString(m.viewport.View())
+	b.WriteString(m.statusBar())
+	b.WriteByte('\n')
+	b.WriteString(boards)
 	b.WriteByte('\n')
 	b.WriteString(m.inputView())
 	b.WriteByte('\n')
-	b.WriteString(m.statusBar())
+	b.WriteString(m.commandLegend())
 	return b.String()
 }
 
 func (m TUIModel) inputView() string {
 	if m.streaming && m.generating {
-		return inputBarStyle.Render(fmt.Sprintf("  %s Generating phases... (%d completed, writing %s)", m.spinner.View(), m.genCompleted, m.genCurrentPhase))
+		return inputBarStyle.Render(fmt.Sprintf(" %s generating phases (%d complete, writing %s)", m.spinner.View(), m.genCompleted, m.genCurrentPhase))
 	}
 	if m.streaming {
-		return inputBarStyle.Render(fmt.Sprintf("  %s Thinking...", m.spinner.View()))
+		return inputBarStyle.Render(fmt.Sprintf(" %s thinking...", m.spinner.View()))
 	}
 	if m.err != nil {
 		return m.input.View() + "\n" + errorStyle.Render("  ⚠ Error occurred — see above. Type to continue.")
 	}
-	return m.input.View()
+	prefix := "input"
+	if m.activePanel == panelInput {
+		prefix = "input*"
+	}
+	return inputBarStyle.Render(" "+prefix) + "\n" + m.input.View()
 }
 
 func (m TUIModel) statusBar() string {
-	left := " Planning"
+	left := "Planning"
 	if m.generating {
-		left += fmt.Sprintf(" | Generating: %d completed, writing %s", m.genCompleted, m.genCurrentPhase)
+		left += fmt.Sprintf(" | generating %d complete (%s)", m.genCompleted, m.genCurrentPhase)
 	} else if m.phaseCount > 0 {
-		left += fmt.Sprintf(" | Phases: %d", m.phaseCount)
+		left += fmt.Sprintf(" | phases %d", m.phaseCount)
 	}
 
-	right := "Ctrl+A: generate | Ctrl+R: reset | Esc: quit "
+	center := fmt.Sprintf("messages %d", len(m.messages))
+	if m.streaming {
+		center = "streaming"
+	}
+	right := "q quit"
+	return m.theme.RenderHeaderBar(m.width, left, center, right)
+}
 
-	leftWidth := m.width / 2
-	rightWidth := m.width - leftWidth
-
-	bar := padRight(left, leftWidth) + padLeft(right, rightWidth)
-	return statusStyle.Render(bar)
+func (m TUIModel) commandLegend() string {
+	items := []chrome.LegendItem{
+		{Key: "q", Action: "quit"},
+		{Key: "?", Action: "help"},
+		{Key: "tab", Action: "focus"},
+		{Key: "ctrl+g", Action: "generate"},
+		{Key: "ctrl+n", Action: "reset"},
+	}
+	switch m.activePanel {
+	case panelTimeline, panelChat, panelStatus:
+		items = append(items,
+			chrome.LegendItem{Key: "j/k", Action: "scroll"},
+			chrome.LegendItem{Key: "pgup/pgdn", Action: "page"},
+		)
+	case panelInput:
+		items = append(items, chrome.LegendItem{Key: "enter", Action: "send"})
+	}
+	return m.theme.RenderLegend(m.width, m.panelMeta(m.activePanel), items)
 }
 
 // recalcSizes adjusts component dimensions after a window resize.
 func (m *TUIModel) recalcSizes() {
-	inputHeight := 5 // textarea lines + border
+	inputHeight := 4 // input label + textarea
 	statusHeight := 1
-	vpHeight := m.height - inputHeight - statusHeight
+	legendHeight := 1
+	vpHeight := m.height - inputHeight - statusHeight - legendHeight
 	if vpHeight < 3 {
 		vpHeight = 3
 	}
-	m.viewport.Width = m.width
-	m.viewport.Height = vpHeight
+
+	_, centerW, _ := m.columnWidths()
+	innerW := centerW - 6
+	if innerW < 20 {
+		innerW = 20
+	}
+	m.viewport.Width = innerW
+	m.viewport.Height = maxInt(1, vpHeight-2)
 	m.input.SetWidth(m.width - 2)
 
 	// Recreate the renderer with the new width.
@@ -547,7 +655,9 @@ func (m *TUIModel) refreshViewport() {
 	}
 
 	m.viewport.SetContent(b.String())
-	m.viewport.GotoBottom()
+	if m.activePanel == panelChat {
+		m.viewport.GotoBottom()
+	}
 }
 
 // renderMarkdown renders markdown text using glamour.
@@ -590,7 +700,217 @@ func formatAPIError(err error) string {
 	return fmt.Sprintf("API Error: %s\n\nDetails: %s", friendly, msg)
 }
 
+func (m TUIModel) columnWidths() (int, int, int) {
+	left := m.width * 24 / 100
+	center := m.width * 52 / 100
+	right := m.width - left - center
+	if left < 24 {
+		left = 24
+	}
+	if right < 24 {
+		right = 24
+	}
+	if center < 40 {
+		center = 40
+	}
+	total := left + center + right
+	if total > m.width {
+		diff := total - m.width
+		center -= diff
+		if center < 20 {
+			center = 20
+		}
+	}
+	if left+center+right < m.width {
+		right += m.width - (left + center + right)
+	}
+	return left, center, right
+}
+
+func (m TUIModel) bodyHeight() int {
+	h := m.height - 6
+	if h < 3 {
+		h = 3
+	}
+	return h
+}
+
+func (m TUIModel) renderPanel(title, meta, body string, innerW, innerH int, focused bool) string {
+	header := m.theme.PanelTitle.Render(title)
+	if meta != "" {
+		header += " " + m.theme.PanelMeta.Render("["+meta+"]")
+	}
+	content := header + "\n" + body
+	return m.theme.PanelStyle(focused).Width(innerW).Height(innerH).Render(content)
+}
+
+func (m TUIModel) panelMeta(p planPanel) string {
+	switch p {
+	case panelTimeline:
+		return "timeline"
+	case panelChat:
+		return "chat"
+	case panelStatus:
+		return "status"
+	case panelInput:
+		return "input"
+	default:
+		return ""
+	}
+}
+
+func (m *TUIModel) scrollActive(delta int) {
+	switch m.activePanel {
+	case panelTimeline:
+		lines := m.timelineLines()
+		m.leftScroll = clampScroll(m.leftScroll+delta, len(lines), maxInt(1, m.bodyHeight()-4))
+	case panelStatus:
+		lines := m.statusPaneLines()
+		m.rightScroll = clampScroll(m.rightScroll+delta, len(lines), maxInt(1, m.bodyHeight()-4))
+	case panelChat:
+		if delta > 0 {
+			for i := 0; i < delta; i++ {
+				m.viewport.LineDown(1)
+			}
+		} else {
+			for i := 0; i < -delta; i++ {
+				m.viewport.LineUp(1)
+			}
+		}
+	}
+}
+
+func (m TUIModel) timelineView(height int) string {
+	return m.renderScrolledLines(m.timelineLines(), m.leftScroll, height)
+}
+
+func (m TUIModel) statusPaneView(height int) string {
+	return m.renderScrolledLines(m.statusPaneLines(), m.rightScroll, height)
+}
+
+func (m TUIModel) renderScrolledLines(lines []string, scroll int, height int) string {
+	if height < 1 {
+		height = 1
+	}
+	if len(lines) == 0 {
+		return " "
+	}
+	start := clampScroll(scroll, len(lines), height)
+	end := start + height
+	if end > len(lines) {
+		end = len(lines)
+	}
+	out := strings.Join(lines[start:end], "\n")
+	if end-start < height {
+		out += strings.Repeat("\n", height-(end-start))
+	}
+	return out
+}
+
+func (m TUIModel) timelineLines() []string {
+	lines := []string{
+		fmt.Sprintf("messages: %d", len(m.messages)),
+		fmt.Sprintf("streaming: %t", m.streaming),
+		fmt.Sprintf("truncation retries: %d/%d", m.continueCount, maxAutoContinues),
+		"",
+		"recent activity",
+	}
+	for i := len(m.messages) - 1; i >= 0 && len(lines) < 25; i-- {
+		msg := m.messages[i]
+		prefix := "A"
+		switch msg.role {
+		case "user":
+			prefix = "U"
+		case "tool":
+			prefix = "T"
+		case "error":
+			prefix = "E"
+		}
+		text := strings.TrimSpace(msg.content)
+		if text == "" {
+			text = "(empty)"
+		}
+		runes := []rune(text)
+		if len(runes) > 48 {
+			text = string(runes[:48]) + "..."
+		}
+		lines = append(lines, fmt.Sprintf("%s | %s", prefix, text))
+	}
+	return lines
+}
+
+func (m TUIModel) statusPaneLines() []string {
+	phase := m.genCurrentPhase
+	if phase == "" {
+		phase = "n/a"
+	}
+	lines := []string{
+		fmt.Sprintf("mode: %s", m.modeLabel()),
+		fmt.Sprintf("phase files generated: %d", m.phaseCount),
+		fmt.Sprintf("current generation phase: %s", phase),
+		fmt.Sprintf("generation complete count: %d", m.genCompleted),
+		fmt.Sprintf("generation tool inflight: %t", m.genInFlight),
+		fmt.Sprintf("auto-continue attempts: %d/%d", m.continueCount, maxAutoContinues),
+	}
+	if m.err != nil {
+		lines = append(lines, "", "last error:", strings.TrimSpace(formatAPIError(m.err)))
+	}
+	return lines
+}
+
+func (m TUIModel) modeLabel() string {
+	if m.streaming && m.generating {
+		return "generating"
+	}
+	if m.streaming {
+		return "streaming"
+	}
+	return "idle"
+}
+
+func (m TUIModel) helpView() string {
+	help := []string{
+		"Planner Keymap",
+		"",
+		"Global: q quit | ? help | tab focus | ctrl+g generate | ctrl+n reset",
+		"Panels: timeline/chat/status use j/k and pgup/pgdn to scroll",
+		"Input: focus input pane and press enter to send",
+		"",
+		"Press ? again to dismiss",
+	}
+	content := strings.Join(help, "\n")
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("81")).
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("252")).
+		Padding(1, 2)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, style.Render(content))
+}
+
+func clampScroll(pos, total, viewport int) int {
+	if pos < 0 {
+		return 0
+	}
+	maxPos := total - viewport
+	if maxPos < 0 {
+		maxPos = 0
+	}
+	if pos > maxPos {
+		return maxPos
+	}
+	return pos
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // padRight pads a string with spaces to fill width.
+// Kept for compatibility with existing tests and helpers.
 func padRight(s string, width int) string {
 	if len(s) >= width {
 		return s[:width]
@@ -599,6 +919,7 @@ func padRight(s string, width int) string {
 }
 
 // padLeft pads a string with spaces on the left to fill width.
+// Kept for compatibility with existing tests and helpers.
 func padLeft(s string, width int) string {
 	if len(s) >= width {
 		return s[len(s)-width:]

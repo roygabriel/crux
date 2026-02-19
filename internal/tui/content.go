@@ -93,15 +93,15 @@ func (p *ContentPanel) HandleKey(key string) (handled bool, cmd *Command) {
 
 func (p *ContentPanel) handleNormalKey(key string) (bool, *Command) {
 	switch key {
-	case "1":
+	case "o":
 		p.activeTab = TabOutput
 		p.scrollPos = 0
 		return true, nil
-	case "2":
+	case "d":
 		p.activeTab = TabDetails
 		p.scrollPos = 0
 		return true, nil
-	case "3":
+	case "n":
 		p.activeTab = TabDecisions
 		p.scrollPos = 0
 		return true, nil
@@ -117,7 +117,7 @@ func (p *ContentPanel) handleNormalKey(key string) (bool, *Command) {
 	case "pgup":
 		p.scrollUp(10)
 		return true, nil
-	case "m":
+	case "i":
 		if p.agent != nil {
 			p.inputMode = true
 			p.sentMsg = ""
@@ -261,12 +261,19 @@ func (p *ContentPanel) renderTabBar() string {
 	}{
 		{"Output", TabOutput},
 		{"Details", TabDetails},
-		{"Decisions", TabDecisions},
+		{"Notes", TabDecisions},
 	}
 
 	var parts []string
 	for _, t := range tabs {
-		label := fmt.Sprintf("[%d] %s", int(t.tab)+1, t.label)
+		key := "o"
+		switch t.tab {
+		case TabDetails:
+			key = "d"
+		case TabDecisions:
+			key = "n"
+		}
+		label := fmt.Sprintf("[%s] %s", key, t.label)
 		if t.tab == p.activeTab {
 			parts = append(parts, tabActiveStyle.Render(label))
 		} else {
@@ -281,7 +288,7 @@ func (p *ContentPanel) renderInputLine() string {
 	if p.inputMode {
 		line += contentInput.Render(p.inputBuffer + "_")
 	} else {
-		line += contentLabel.Render("(press m to type)")
+		line += contentLabel.Render("(press i to type)")
 	}
 	if p.sentMsg != "" {
 		line += "  " + p.sentMsg

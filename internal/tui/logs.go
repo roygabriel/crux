@@ -154,9 +154,17 @@ func (p *LogsPanel) HandleKey(key string) (handled bool, cmd *Command) {
 
 func (p *LogsPanel) handleNormalKey(key string) bool {
 	switch key {
-	case "f":
+	case "/":
 		p.filterMode = true
 		p.filterInput = p.filterActive
+		return true
+	case "g":
+		p.autoScroll = false
+		p.scrollPos = p.maxScroll()
+		return true
+	case "G":
+		p.scrollPos = 0
+		p.autoScroll = true
 		return true
 	case "up", "k":
 		p.ScrollUp(1)
@@ -173,6 +181,28 @@ func (p *LogsPanel) handleNormalKey(key string) bool {
 	default:
 		return false
 	}
+}
+
+func (p *LogsPanel) maxScroll() int {
+	maxScroll := p.count - p.height
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	return maxScroll
+}
+
+// ModeLabel returns the current interaction mode for panel chrome.
+func (p *LogsPanel) ModeLabel() string {
+	if p.filterMode {
+		return "filtering"
+	}
+	if p.filterActive != "" {
+		return "filtered"
+	}
+	if p.autoScroll {
+		return "live"
+	}
+	return "scrolled"
 }
 
 func (p *LogsPanel) handleFilterKey(key string) bool {

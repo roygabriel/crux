@@ -40,7 +40,7 @@ func TestHelpOverlay_ViewContainsKeyBindings(t *testing.T) {
 	h := HelpOverlay{visible: true, width: 80, height: 40}
 	view := h.View()
 
-	keys := []string{"q", "tab", "1/2/3", "?", "m", "f"}
+	keys := []string{"q", "tab", "o/d/n", "?", "i", "/"}
 	for _, k := range keys {
 		if !strings.Contains(view, k) {
 			t.Errorf("View should contain key %q", k)

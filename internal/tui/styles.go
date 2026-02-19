@@ -16,7 +16,6 @@ var (
 	statusDotRateLimited = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))  // cyan
 	statusDotStopped     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))  // gray
 	statusDotDefault     = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))  // white
-	headerStyle          = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	selectedRowStyle     = lipgloss.NewStyle().Background(lipgloss.Color("236")) // dark gray bg
 	confirmStyle         = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3")) // yellow bold
 )

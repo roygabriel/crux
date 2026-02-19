@@ -164,12 +164,12 @@ func TestSidebarPanel_PauseConfirmation(t *testing.T) {
 	p := NewSidebarPanel()
 	p.SetAgents([]AgentSnapshot{{ID: "a1", Status: types.StatusBusy}})
 
-	handled, cmd := p.HandleKey("p")
+	handled, cmd := p.HandleKey("s")
 	if !handled {
-		t.Fatal("p should be handled")
+		t.Fatal("s should be handled")
 	}
 	if cmd != nil {
-		t.Error("p should not return a command immediately")
+		t.Error("s should not return a command immediately")
 	}
 	if !p.confirming {
 		t.Fatal("expected confirming state")
@@ -193,7 +193,7 @@ func TestSidebarPanel_PauseConfirmation(t *testing.T) {
 func TestSidebarPanel_PauseCancelN(t *testing.T) {
 	p := NewSidebarPanel()
 	p.SetAgents([]AgentSnapshot{{ID: "a1", Status: types.StatusBusy}})
-	p.HandleKey("p")
+	p.HandleKey("s")
 
 	handled, cmd := p.HandleKey("n")
 	if !handled {
@@ -210,7 +210,7 @@ func TestSidebarPanel_PauseCancelN(t *testing.T) {
 func TestSidebarPanel_PauseCancelEsc(t *testing.T) {
 	p := NewSidebarPanel()
 	p.SetAgents([]AgentSnapshot{{ID: "a1", Status: types.StatusBusy}})
-	p.HandleKey("p")
+	p.HandleKey("s")
 
 	handled, cmd := p.HandleKey("esc")
 	if !handled {
@@ -252,12 +252,12 @@ func TestSidebarPanel_ResumeImmediate(t *testing.T) {
 	p := NewSidebarPanel()
 	p.SetAgents([]AgentSnapshot{{ID: "a1", Status: types.StatusStopped}})
 
-	handled, cmd := p.HandleKey("r")
+	handled, cmd := p.HandleKey("s")
 	if !handled {
-		t.Fatal("r should be handled")
+		t.Fatal("s should be handled")
 	}
 	if cmd == nil {
-		t.Fatal("r on stopped agent should return command immediately")
+		t.Fatal("s on stopped agent should return command immediately")
 	}
 	if cmd.Type != CmdResumeAgent || cmd.AgentID != "a1" {
 		t.Errorf("cmd = %+v, want ResumeAgent for a1", cmd)
@@ -271,28 +271,31 @@ func TestSidebarPanel_ResumeNoOpIfNotStopped(t *testing.T) {
 	p := NewSidebarPanel()
 	p.SetAgents([]AgentSnapshot{{ID: "a1", Status: types.StatusBusy}})
 
-	handled, cmd := p.HandleKey("r")
+	handled, cmd := p.HandleKey("s")
 	if !handled {
-		t.Fatal("r should be handled")
+		t.Fatal("s should be handled")
 	}
 	if cmd != nil {
-		t.Error("r on non-stopped agent should be no-op")
+		t.Error("s on busy agent should require confirmation")
+	}
+	if !p.confirming {
+		t.Error("s on busy agent should enter confirmation mode")
 	}
 }
 
-func TestSidebarPanel_PauseNoOpIfStopped(t *testing.T) {
+func TestSidebarPanel_PauseNoOpIfRateLimited(t *testing.T) {
 	p := NewSidebarPanel()
-	p.SetAgents([]AgentSnapshot{{ID: "a1", Status: types.StatusStopped}})
+	p.SetAgents([]AgentSnapshot{{ID: "a1", Status: types.StatusRateLimited}})
 
-	handled, cmd := p.HandleKey("p")
+	handled, cmd := p.HandleKey("s")
 	if !handled {
-		t.Fatal("p should be handled")
+		t.Fatal("s should be handled")
 	}
 	if cmd != nil {
-		t.Error("p on stopped agent should be no-op")
+		t.Error("s on rate-limited agent should be no-op")
 	}
 	if p.confirming {
-		t.Error("should not enter confirmation for stopped agent")
+		t.Error("should not enter confirmation for rate-limited agent")
 	}
 }
 
@@ -339,12 +342,12 @@ func TestSidebarPanel_SelectedRowHighlight(t *testing.T) {
 
 	view := p.View()
 	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
-	// Header + 2 rows = 3 lines minimum.
-	if len(lines) < 3 {
-		t.Fatalf("expected at least 3 lines, got %d", len(lines))
+	// 2 rows minimum.
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", len(lines))
 	}
-	// Selected row (line 1) should differ from non-selected (line 2).
-	if lines[1] == lines[2] {
+	// Selected row should differ from non-selected.
+	if lines[0] == lines[1] {
 		t.Error("selected row should be styled differently from non-selected row")
 	}
 }
@@ -362,13 +365,13 @@ func TestSidebarPanel_UnhandledKeys(t *testing.T) {
 	}
 }
 
-func TestSidebarPanel_HeaderShown(t *testing.T) {
+func TestSidebarPanel_NoHeaderShown(t *testing.T) {
 	p := NewSidebarPanel()
 	p.SetSize(30, 20)
 	p.SetAgents(nil)
 
 	view := p.View()
-	if !strings.Contains(view, "AGENTS") {
-		t.Error("expected AGENTS header in sidebar view")
+	if strings.Contains(view, "AGENTS") {
+		t.Error("did not expect AGENTS header in sidebar view")
 	}
 }

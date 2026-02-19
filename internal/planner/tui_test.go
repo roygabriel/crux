@@ -242,7 +242,7 @@ func TestTUIModel_CtrlR_Reset(t *testing.T) {
 	m.messages = append(m.messages, chatMessage{role: "assistant", content: "hi"})
 	m.phaseCount = 3
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
 	model := updated.(TUIModel)
 
 	if len(model.messages) != 0 {
@@ -293,9 +293,6 @@ func TestTUIModel_StatusBar(t *testing.T) {
 	if !strings.Contains(bar, "Planning") {
 		t.Errorf("status bar should contain 'Planning', got: %q", bar)
 	}
-	if !strings.Contains(bar, "Ctrl+A") {
-		t.Errorf("status bar should mention Ctrl+A, got: %q", bar)
-	}
 }
 
 func TestTUIModel_StatusBarWithPhases(t *testing.T) {
@@ -303,7 +300,7 @@ func TestTUIModel_StatusBarWithPhases(t *testing.T) {
 	m.phaseCount = 5
 	bar := m.statusBar()
 
-	if !strings.Contains(bar, "Phases: 5") {
+	if !strings.Contains(bar, "phases 5") {
 		t.Errorf("status bar should show phase count, got: %q", bar)
 	}
 }
@@ -313,8 +310,8 @@ func TestTUIModel_InputViewWhileStreaming(t *testing.T) {
 	m.streaming = true
 
 	view := m.inputView()
-	if !strings.Contains(view, "Thinking") {
-		t.Errorf("input view during streaming should show 'Thinking', got: %q", view)
+	if !strings.Contains(view, "thinking") {
+		t.Errorf("input view during streaming should show 'thinking', got: %q", view)
 	}
 }
 
@@ -421,12 +418,12 @@ func TestTUIModel_RecalcSizes(t *testing.T) {
 	m.height = 40
 	m.recalcSizes()
 
-	expectedVPHeight := 40 - 5 - 1 // height - input - status
+	expectedVPHeight := 40 - 4 - 1 - 1 - 2 // height - input - status - legend - panel header allowance
 	if m.viewport.Height != expectedVPHeight {
 		t.Errorf("viewport height = %d, want %d", m.viewport.Height, expectedVPHeight)
 	}
-	if m.viewport.Width != 120 {
-		t.Errorf("viewport width = %d, want 120", m.viewport.Width)
+	if m.viewport.Width != 56 {
+		t.Errorf("viewport width = %d, want 56", m.viewport.Width)
 	}
 }
 
@@ -697,18 +694,18 @@ func TestTUIModel_ContinueCount_ResetsOnReset(t *testing.T) {
 	m := initModel(newTestTUIModel(t))
 	m.continueCount = 2
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
 	model := updated.(TUIModel)
 
 	if model.continueCount != 0 {
-		t.Errorf("continueCount = %d, want 0 after Ctrl+R", model.continueCount)
+		t.Errorf("continueCount = %d, want 0 after Ctrl+N", model.continueCount)
 	}
 }
 
 func TestTUIModel_CtrlA_SendsGenerateMessage(t *testing.T) {
 	m := initModel(newTestTUIModel(t))
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
 	model := updated.(TUIModel)
 
 	// Should have added a user message.
@@ -719,22 +716,22 @@ func TestTUIModel_CtrlA_SendsGenerateMessage(t *testing.T) {
 		t.Errorf("message role = %q, want 'user'", model.messages[0].role)
 	}
 	if !strings.Contains(model.messages[0].content, "generate_single_phase") {
-		t.Errorf("Ctrl+A message should mention generate_single_phase, got: %q", model.messages[0].content)
+		t.Errorf("Ctrl+G message should mention generate_single_phase, got: %q", model.messages[0].content)
 	}
 	if !strings.Contains(model.messages[0].content, "one phase at a time") {
-		t.Errorf("Ctrl+A message should mention 'one phase at a time', got: %q", model.messages[0].content)
+		t.Errorf("Ctrl+G message should mention 'one phase at a time', got: %q", model.messages[0].content)
 	}
 	if cmd == nil {
-		t.Error("expected a cmd from Ctrl+A")
+		t.Error("expected a cmd from Ctrl+G")
 	}
 }
 
 func TestTUIModel_StatusBar_GenerateLabel(t *testing.T) {
 	m := initModel(newTestTUIModel(t))
-	bar := m.statusBar()
+	bar := m.commandLegend()
 
-	if !strings.Contains(bar, "Ctrl+A: generate") {
-		t.Errorf("status bar should show 'Ctrl+A: generate', got: %q", bar)
+	if !strings.Contains(bar, "ctrl+g") {
+		t.Errorf("legend should show 'ctrl+g', got: %q", bar)
 	}
 }
 
@@ -873,11 +870,11 @@ func TestTUIModel_InputView_Generating(t *testing.T) {
 	m.genCurrentPhase = "2A"
 
 	view := m.inputView()
-	if !strings.Contains(view, "Generating phases") {
-		t.Errorf("input view should show 'Generating phases', got: %q", view)
+	if !strings.Contains(view, "generating phases") {
+		t.Errorf("input view should show 'generating phases', got: %q", view)
 	}
-	if !strings.Contains(view, "2 completed") {
-		t.Errorf("input view should show '2 completed', got: %q", view)
+	if !strings.Contains(view, "2 complete") {
+		t.Errorf("input view should show '2 complete', got: %q", view)
 	}
 	if !strings.Contains(view, "writing 2A") {
 		t.Errorf("input view should show 'writing 2A', got: %q", view)
@@ -891,13 +888,7 @@ func TestTUIModel_StatusBar_Generating(t *testing.T) {
 	m.genCurrentPhase = "2A"
 
 	bar := m.statusBar()
-	if !strings.Contains(bar, "Generating:") {
-		t.Errorf("status bar should contain 'Generating:', got: %q", bar)
-	}
-	if !strings.Contains(bar, "2 completed") {
-		t.Errorf("status bar should contain '2 completed', got: %q", bar)
-	}
-	if !strings.Contains(bar, "writing 2A") {
-		t.Errorf("status bar should contain 'writing 2A', got: %q", bar)
+	if !strings.Contains(bar, "generating") {
+		t.Errorf("status bar should contain 'generating', got: %q", bar)
 	}
 }

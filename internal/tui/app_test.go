@@ -125,8 +125,8 @@ func TestModel_SidebarKeyRouting(t *testing.T) {
 	m.sidebar.SetFocused(true)
 	m.activePanel = PanelSidebar
 
-	// Press 'r' to resume the stopped agent.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	// Press 's' to resume the stopped agent.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	_ = updated.(Model)
 
 	select {
@@ -138,7 +138,7 @@ func TestModel_SidebarKeyRouting(t *testing.T) {
 			t.Errorf("AgentID = %q, want %q", cmd.AgentID, "a1")
 		}
 	default:
-		t.Fatal("expected command on bus after 'r' on stopped agent")
+		t.Fatal("expected command on bus after 's' on stopped agent")
 	}
 }
 
@@ -151,8 +151,8 @@ func TestModel_ContentPanelKeyRouting(t *testing.T) {
 	m.contentPanel.SetFocused(true)
 	m.contentPanel.SetAgent(m.sidebar.SelectedAgent())
 
-	// Press '2' to switch to details tab.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	// Press 'd' to switch to details tab.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	m2 := updated.(Model)
 
 	if m2.contentPanel.ActiveTab() != TabDetails {
@@ -217,8 +217,8 @@ func TestModel_NilCommandBus(t *testing.T) {
 	})
 	m.activePanel = PanelSidebar
 
-	// Press 'r' with nil commandBus — should not panic.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	// Press 's' with nil commandBus — should not panic.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	_ = updated.(Model)
 }
 
@@ -332,7 +332,7 @@ func TestModel_LogPanelFilterModeKeyRouting(t *testing.T) {
 	m.logsPanel.SetFocused(true)
 
 	// Enter filter mode.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m2 := updated.(Model)
 	if !m2.logsPanel.IsFilterMode() {
 		t.Fatal("filter mode should be active")
@@ -475,7 +475,7 @@ func TestModel_ContentPanel_SendMessage(t *testing.T) {
 	m.contentPanel.SetFocused(true)
 
 	// Enter input mode.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
 	m2 := updated.(Model)
 
 	// Type message.
@@ -515,7 +515,7 @@ func TestModel_ThreePanelView(t *testing.T) {
 	m.syncContentWithSidebar()
 
 	view := m.View()
-	if !strings.Contains(view, "AGENTS") {
+	if !strings.Contains(view, "Agents") {
 		t.Error("view should contain sidebar header")
 	}
 	if !strings.Contains(view, "a1") {

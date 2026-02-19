@@ -122,23 +122,22 @@ func (p *SidebarPanel) handleNormalKey(key string) (bool, *Command) {
 		}
 		return true, nil
 
-	case "p":
+	case "s":
 		agent := p.SelectedAgent()
-		if agent == nil || agent.Status == types.StatusStopped {
+		if agent == nil {
+			return true, nil
+		}
+		if agent.Status == types.StatusStopped {
+			cmd := Command{Type: CmdResumeAgent, AgentID: agent.ID}
+			return true, &cmd
+		}
+		if agent.Status == types.StatusRateLimited || agent.Status == types.StatusError {
 			return true, nil
 		}
 		p.confirming = true
 		p.confirmAction = Command{Type: CmdPauseAgent, AgentID: agent.ID}
 		p.confirmPrompt = fmt.Sprintf("Pause %s? [y/n]", agent.ID)
 		return true, nil
-
-	case "r":
-		agent := p.SelectedAgent()
-		if agent == nil || agent.Status != types.StatusStopped {
-			return true, nil
-		}
-		cmd := Command{Type: CmdResumeAgent, AgentID: agent.ID}
-		return true, &cmd
 
 	case "x":
 		agent := p.SelectedAgent()
@@ -158,9 +157,6 @@ func (p *SidebarPanel) handleNormalKey(key string) (bool, *Command) {
 // View renders the sidebar agent list as a string.
 func (p *SidebarPanel) View() string {
 	var b strings.Builder
-
-	b.WriteString(headerStyle.Render("AGENTS"))
-	b.WriteByte('\n')
 
 	nameWidth := p.width - 4 // 2 for dot+space, 2 for padding
 	if nameWidth < 4 {

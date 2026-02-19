@@ -108,6 +108,31 @@ func (m *PaneManager) SendKeys(ctx context.Context, paneID string, text string) 
 	return nil
 }
 
+// SendKeysLiteral sends text literally to a tmux pane followed by Enter.
+// Unlike SendKeys, it uses the tmux -l flag to prevent interpretation of
+// key names and does not reject shell metacharacters. Use this for
+// delivering task content that may contain code fences and semicolons.
+// Only the byte-length limit is enforced.
+func (m *PaneManager) SendKeysLiteral(ctx context.Context, paneID string, text string) error {
+	if paneID == "" {
+		return fmt.Errorf("pane ID must not be empty")
+	}
+	if err := ValidateLength(text); err != nil {
+		return fmt.Errorf("send literal keys to pane %q: %w", paneID, err)
+	}
+	// Send text literally — tmux will not interpret key names.
+	_, err := m.cmd.Run(ctx, "send-keys", "-l", "-t", paneID, text)
+	if err != nil {
+		return fmt.Errorf("send literal keys to pane %q: %w", paneID, err)
+	}
+	// Send Enter separately (as a key name, not literal text).
+	_, err = m.cmd.Run(ctx, "send-keys", "-t", paneID, "Enter")
+	if err != nil {
+		return fmt.Errorf("send literal keys to pane %q (enter): %w", paneID, err)
+	}
+	return nil
+}
+
 // SendKeysRaw sends literal key names to a tmux pane without appending Enter
 // and without sanitization. Use this for control sequences (e.g. "C-c", "Escape").
 func (m *PaneManager) SendKeysRaw(ctx context.Context, paneID string, keys ...string) error {

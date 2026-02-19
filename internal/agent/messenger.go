@@ -73,7 +73,7 @@ func (m *Messenger) Send(ctx context.Context, agentID types.AgentID, msg types.M
 
 	chunks := chunkMessage(text, tmux.MaxInputLength)
 	for _, chunk := range chunks {
-		if err := m.pm.SendKeys(ctx, inst.Agent.PaneID, chunk); err != nil {
+		if err := m.pm.SendKeysLiteral(ctx, inst.Agent.PaneID, chunk); err != nil {
 			return fmt.Errorf("send to agent %q: %w", agentID, err)
 		}
 	}

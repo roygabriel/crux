@@ -29,6 +29,17 @@ var unsafePatterns = []string{
 // It rejects inputs that exceed MaxInputLength or contain dangerous shell
 // metacharacters (;, &&, ||, $(), backticks, newlines). Returns the
 // original text unmodified if it passes validation.
+// ValidateLength checks that text does not exceed MaxInputLength.
+// Unlike SanitizeInput, it does not reject shell metacharacters.
+// Use this for literal text delivery where tmux send-keys -l
+// prevents shell interpretation.
+func ValidateLength(text string) error {
+	if len(text) > MaxInputLength {
+		return fmt.Errorf("%w: %d bytes (max %d)", ErrInputTooLong, len(text), MaxInputLength)
+	}
+	return nil
+}
+
 func SanitizeInput(text string) (string, error) {
 	if len(text) > MaxInputLength {
 		return "", fmt.Errorf("%w: %d bytes (max %d)", ErrInputTooLong, len(text), MaxInputLength)

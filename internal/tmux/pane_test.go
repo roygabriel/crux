@@ -3,6 +3,7 @@ package tmux
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -406,6 +407,100 @@ func TestPaneManagerSendKeys(t *testing.T) {
 			err := pm.SendKeys(context.Background(), tt.paneID, tt.text)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("SendKeys(%q, %q) error = %v, wantErr %v", tt.paneID, tt.text, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestPaneManagerSendKeysLiteral(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		paneID  string
+		text    string
+		runFunc func(ctx context.Context, args ...string) (string, error)
+		wantErr bool
+	}{
+		{
+			name:   "backtick-content",
+			paneID: "%0",
+			text:   "```go\nfmt.Println()\n```",
+			runFunc: func(_ context.Context, args ...string) (string, error) {
+				if args[0] != "send-keys" {
+					t.Errorf("expected send-keys, got %s", args[0])
+				}
+				// First call has -l flag, second is Enter.
+				if len(args) > 1 && args[1] == "-l" {
+					if args[4] != "```go\nfmt.Println()\n```" {
+						t.Errorf("expected literal text, got %s", args[4])
+					}
+				}
+				return "", nil
+			},
+		},
+		{
+			name:   "semicolons-pass",
+			paneID: "%0",
+			text:   "go build ./...; go test ./...",
+			runFunc: func(_ context.Context, args ...string) (string, error) {
+				if len(args) > 1 && args[1] == "-l" {
+					if args[4] != "go build ./...; go test ./..." {
+						t.Errorf("expected literal text with semicolons, got %s", args[4])
+					}
+				}
+				return "", nil
+			},
+		},
+		{
+			name:   "literal-flag-present",
+			paneID: "%0",
+			text:   "hello",
+			runFunc: func(_ context.Context, args ...string) (string, error) {
+				// Only check the first call (literal send), not the Enter call.
+				if len(args) > 1 && args[1] == "-l" {
+					if args[1] != "-l" {
+						t.Errorf("expected -l flag at args[1], got %s", args[1])
+					}
+					if args[2] != "-t" {
+						t.Errorf("expected -t at args[2], got %s", args[2])
+					}
+				}
+				return "", nil
+			},
+		},
+		{
+			name:    "empty-pane-id",
+			paneID:  "",
+			text:    "hello",
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:    "exceeds-max-length",
+			paneID:  "%0",
+			text:    strings.Repeat("a", MaxInputLength+1),
+			runFunc: func(_ context.Context, _ ...string) (string, error) { return "", nil },
+			wantErr: true,
+		},
+		{
+			name:   "commander-error",
+			paneID: "%0",
+			text:   "hello",
+			runFunc: func(_ context.Context, _ ...string) (string, error) {
+				return "", errors.New("pane not found")
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pm := NewPaneManager(&mockCommander{runFunc: tt.runFunc}, newTestLogger())
+			err := pm.SendKeysLiteral(context.Background(), tt.paneID, tt.text)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SendKeysLiteral(%q, %q) error = %v, wantErr %v", tt.paneID, tt.text, err, tt.wantErr)
 			}
 		})
 	}

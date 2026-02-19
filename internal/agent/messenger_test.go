@@ -67,8 +67,9 @@ func TestMessengerSend(t *testing.T) {
 		if len(args) > 0 && args[0] == "split-window" {
 			return "%1", nil
 		}
-		if len(args) >= 4 && args[0] == "send-keys" {
-			sentTexts = append(sentTexts, args[3])
+		// Literal sends have -l at args[1]; capture the text at args[4].
+		if len(args) >= 5 && args[0] == "send-keys" && args[1] == "-l" {
+			sentTexts = append(sentTexts, args[4])
 		}
 		return "", nil
 	}}
@@ -111,8 +112,8 @@ func TestMessengerSendChunkedMessage(t *testing.T) {
 		if len(args) > 0 && args[0] == "split-window" {
 			return "%1", nil
 		}
-		if len(args) >= 4 && args[0] == "send-keys" {
-			sentTexts = append(sentTexts, args[3])
+		if len(args) >= 5 && args[0] == "send-keys" && args[1] == "-l" {
+			sentTexts = append(sentTexts, args[4])
 		}
 		return "", nil
 	}}
@@ -153,8 +154,8 @@ func TestMessengerSendLongLineChunked(t *testing.T) {
 		if len(args) > 0 && args[0] == "split-window" {
 			return "%1", nil
 		}
-		if len(args) >= 4 && args[0] == "send-keys" {
-			sentTexts = append(sentTexts, args[3])
+		if len(args) >= 5 && args[0] == "send-keys" && args[1] == "-l" {
+			sentTexts = append(sentTexts, args[4])
 		}
 		return "", nil
 	}}
@@ -186,6 +187,50 @@ func TestMessengerSendLongLineChunked(t *testing.T) {
 	}
 	if len(sentTexts[1]) != 100 {
 		t.Errorf("chunk[1] len = %d, want 100", len(sentTexts[1]))
+	}
+}
+
+func TestMessengerSendMarkdownWithCodeFences(t *testing.T) {
+	t.Parallel()
+
+	var sentTexts []string
+	cmd := &mockCommander{fn: func(_ context.Context, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "split-window" {
+			return "%1", nil
+		}
+		if len(args) >= 5 && args[0] == "send-keys" && args[1] == "-l" {
+			sentTexts = append(sentTexts, args[4])
+		}
+		return "", nil
+	}}
+
+	p := &messengerPlugin{
+		stubPlugin:   stubPlugin{name: "test-plugin"},
+		formatResult: "```go\nfmt.Println(\"hello\")\n```\nRun: go build && go test",
+	}
+
+	_, m, err := spawnTestAgent(cmd, p)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	sentTexts = nil
+
+	msg := types.Message{ID: "msg-md", Type: types.MessageTask}
+	if err := m.Send(context.Background(), "agent-1", msg); err != nil {
+		t.Fatalf("Send: expected no error for markdown content, got %v", err)
+	}
+
+	// chunkMessage splits on newlines; expect chunks for non-empty lines.
+	// Lines: "```go", "fmt.Println(\"hello\")", "```", "Run: go build && go test"
+	if len(sentTexts) != 4 {
+		t.Fatalf("expected 4 chunks, got %d: %v", len(sentTexts), sentTexts)
+	}
+	if sentTexts[0] != "```go" {
+		t.Errorf("chunk[0] = %q, want %q", sentTexts[0], "```go")
+	}
+	if sentTexts[3] != "Run: go build && go test" {
+		t.Errorf("chunk[3] = %q, want %q", sentTexts[3], "Run: go build && go test")
 	}
 }
 
@@ -232,17 +277,13 @@ func TestMessengerSendAgentNotFound(t *testing.T) {
 func TestMessengerSendPaneError(t *testing.T) {
 	t.Parallel()
 
-	sendCallCount := 0
 	cmd := &mockCommander{fn: func(_ context.Context, args ...string) (string, error) {
 		if len(args) > 0 && args[0] == "split-window" {
 			return "%1", nil
 		}
-		if len(args) > 0 && args[0] == "send-keys" {
-			sendCallCount++
-			// First call is the launch command (spawn); second is our message.
-			if sendCallCount > 1 {
-				return "", errors.New("pane defunct")
-			}
+		// Literal sends (from Messenger.Send) have -l flag; fail those.
+		if len(args) > 1 && args[0] == "send-keys" && args[1] == "-l" {
+			return "", errors.New("pane defunct")
 		}
 		return "", nil
 	}}

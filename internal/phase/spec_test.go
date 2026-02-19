@@ -2,6 +2,7 @@ package phase_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -153,4 +154,114 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// writeDepSpec writes a minimal phase spec with the given depends-on lines
+// and returns the temp file path.
+func writeDepSpec(t *testing.T, h1 string, dependsOnLines string) string {
+	t.Helper()
+	content := fmt.Sprintf(`%s
+
+## Status
+
+planned
+
+## Depends On
+
+%s
+
+## Exit Criteria
+
+- [ ] manual check
+`, h1, dependsOnLines)
+	path := filepath.Join(t.TempDir(), "PHASE.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestParseDependsOn_Formats(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []types.PhaseID
+	}{
+		{"none", "None", nil},
+		{"single with prefix", "Phase 1B", []types.PhaseID{"1B"}},
+		{"single bare ID", "1B", []types.PhaseID{"1B"}},
+		{"bullet with prefix", "- Phase 1B", []types.PhaseID{"1B"}},
+		{"ID with title suffix", "Phase 1A: Terminal Infrastructure", []types.PhaseID{"1A"}},
+		{"comma-sep with Phase each", "Phase 1A, Phase 2B, Phase 3A", []types.PhaseID{"1A", "2B", "3A"}},
+		{"comma-sep mixed prefix", "Phase 1A, 2B, 3A", []types.PhaseID{"1A", "2B", "3A"}},
+		{"bullet + comma-sep", "- Phase 1A, Phase 2B", []types.PhaseID{"1A", "2B"}},
+		{"bare comma-sep", "1A, 2B", []types.PhaseID{"1A", "2B"}},
+		{"comma-sep with title suffixes", "Phase 1A: Foo, Phase 2B: Bar", []types.PhaseID{"1A", "2B"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeDepSpec(t,"# Phase T1: Test", tt.input)
+			spec, err := phase.ParseSpec(path)
+			if err != nil {
+				t.Fatalf("ParseSpec: %v", err)
+			}
+			if len(spec.DependsOn) != len(tt.expected) {
+				t.Fatalf("DependsOn = %v (len %d), want %v (len %d)",
+					spec.DependsOn, len(spec.DependsOn), tt.expected, len(tt.expected))
+			}
+			for i, id := range spec.DependsOn {
+				if id != tt.expected[i] {
+					t.Errorf("DependsOn[%d] = %q, want %q", i, id, tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+func TestParseDependsOn_MultiLine(t *testing.T) {
+	depLines := "- Phase 1A\n- Phase 2B\n- Phase 3A"
+	path := writeDepSpec(t,"# Phase T2: Test", depLines)
+	spec, err := phase.ParseSpec(path)
+	if err != nil {
+		t.Fatalf("ParseSpec: %v", err)
+	}
+	want := []types.PhaseID{"1A", "2B", "3A"}
+	if len(spec.DependsOn) != len(want) {
+		t.Fatalf("DependsOn = %v, want %v", spec.DependsOn, want)
+	}
+	for i, id := range spec.DependsOn {
+		if id != want[i] {
+			t.Errorf("DependsOn[%d] = %q, want %q", i, id, want[i])
+		}
+	}
+}
+
+func TestParseSpec_MalformedH1(t *testing.T) {
+	path := writeDepSpec(t,"# Manual verification", "None")
+	spec, err := phase.ParseSpec(path)
+	if err != nil {
+		t.Fatalf("ParseSpec: %v", err)
+	}
+	if spec.ID != "" {
+		t.Errorf("ID = %q, want empty for malformed H1", spec.ID)
+	}
+	if spec.Name != "Manual verification" {
+		t.Errorf("Name = %q, want %q", spec.Name, "Manual verification")
+	}
+}
+
+func TestParseSpec_H1WithNonStandardID(t *testing.T) {
+	path := writeDepSpec(t,"# Manual verification: some title", "None")
+	spec, err := phase.ParseSpec(path)
+	if err != nil {
+		t.Fatalf("ParseSpec: %v", err)
+	}
+	// The ID is extracted but non-standard — a warning is logged.
+	if spec.ID != "Manual verification" {
+		t.Errorf("ID = %q, want %q", spec.ID, "Manual verification")
+	}
+	if spec.Name != "some title" {
+		t.Errorf("Name = %q, want %q", spec.Name, "some title")
+	}
 }

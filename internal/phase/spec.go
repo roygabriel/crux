@@ -95,6 +95,9 @@ var backtickCmd = regexp.MustCompile("`([^`]+)`")
 // promptHeading matches "### Prompt N" headings under the Tasks section.
 var promptHeading = regexp.MustCompile(`^###\s+Prompt\s+(\d+)`)
 
+// validPhaseID matches short alphanumeric phase identifiers (e.g. "1A", "2B", "14F").
+var validPhaseID = regexp.MustCompile(`^[0-9A-Za-z]{1,5}$`)
+
 // ParseSpec reads and parses a phase specification markdown file into a PhaseSpec.
 func ParseSpec(path string) (*PhaseSpec, error) {
 	data, err := os.ReadFile(path)
@@ -120,10 +123,18 @@ func parseSpec(text string) (*PhaseSpec, error) {
 		if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
 			rest := strings.TrimPrefix(trimmed, "# ")
 			if idx := strings.Index(rest, ": "); idx >= 0 {
-				// Extract ID from "Phase 1A: Title" → "1A"
 				prefix := rest[:idx]
 				spec.Name = rest[idx+2:]
-				spec.ID = types.PhaseID(strings.TrimPrefix(prefix, "Phase "))
+				rawID := strings.TrimPrefix(prefix, "Phase ")
+				if !validPhaseID.MatchString(rawID) {
+					slog.Warn("phase spec H1 has non-standard ID",
+						"raw_header", trimmed, "extracted_id", rawID)
+				}
+				spec.ID = types.PhaseID(rawID)
+			} else {
+				spec.Name = rest
+				slog.Warn("phase spec H1 missing 'Phase <ID>: <Title>' format",
+					"raw_header", trimmed)
 			}
 			continue
 		}
@@ -232,12 +243,42 @@ func parseDependsOn(line string, spec *PhaseSpec) {
 	if trimmed == "" || strings.EqualFold(trimmed, "none") {
 		return
 	}
-	// Handle bullet lists like "- Phase 1B" or plain "Phase 1B".
+	// Strip leading bullet prefix.
 	trimmed = strings.TrimPrefix(trimmed, "- ")
-	trimmed = strings.TrimPrefix(trimmed, "Phase ")
-	if trimmed != "" {
-		spec.DependsOn = append(spec.DependsOn, types.PhaseID(trimmed))
+
+	// Split on comma to handle "Phase 1A, Phase 2B" or "1A, 2B".
+	for _, tok := range strings.Split(trimmed, ",") {
+		id := cleanDependencyToken(tok)
+		if id != "" {
+			spec.DependsOn = append(spec.DependsOn, types.PhaseID(id))
+		}
 	}
+}
+
+// cleanDependencyToken extracts a phase ID from a dependency token.
+// It strips "- " prefix, "Phase " prefix, and ": <title>" suffix,
+// then validates the result is a short alphanumeric phase ID.
+func cleanDependencyToken(tok string) string {
+	s := strings.TrimSpace(tok)
+	if s == "" || strings.EqualFold(s, "none") {
+		return ""
+	}
+	s = strings.TrimPrefix(s, "- ")
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "Phase ")
+	s = strings.TrimSpace(s)
+	// Strip ": <title>" suffix.
+	if idx := strings.Index(s, ":"); idx >= 0 {
+		s = strings.TrimSpace(s[:idx])
+	}
+	if s == "" {
+		return ""
+	}
+	if !validPhaseID.MatchString(s) {
+		slog.Warn("ignoring invalid dependency ID", "raw", tok, "extracted", s)
+		return ""
+	}
+	return s
 }
 
 func parseFileLine(line string, sub string, spec *PhaseSpec) {

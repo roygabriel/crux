@@ -252,7 +252,7 @@ func TestParseSpec_MalformedH1(t *testing.T) {
 }
 
 func TestParseSpec_H1WithNonStandardID(t *testing.T) {
-	path := writeDepSpec(t,"# Manual verification: some title", "None")
+	path := writeDepSpec(t, "# Manual verification: some title", "None")
 	spec, err := phase.ParseSpec(path)
 	if err != nil {
 		t.Fatalf("ParseSpec: %v", err)
@@ -263,5 +263,101 @@ func TestParseSpec_H1WithNonStandardID(t *testing.T) {
 	}
 	if spec.Name != "some title" {
 		t.Errorf("Name = %q, want %q", spec.Name, "some title")
+	}
+}
+
+func TestParseSpec_ExitCriteriaAsH1(t *testing.T) {
+	// LLM sometimes generates exit criteria as H1 lines instead of checkboxes.
+	content := `# Phase 1A: Terminal Infrastructure
+
+## Status
+
+planned
+
+## Depends On
+
+None
+
+## Exit Criteria
+
+# Module initialization and dependencies
+# Build succeeds
+# Code quality
+# Manual verification: run the program, should show blank screen
+# Press Ctrl+C to exit cleanly
+`
+	path := filepath.Join(t.TempDir(), "PHASE.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := phase.ParseSpec(path)
+	if err != nil {
+		t.Fatalf("ParseSpec: %v", err)
+	}
+
+	// Phase header should NOT be overwritten by exit criteria H1 lines.
+	if spec.ID != "1A" {
+		t.Errorf("ID = %q, want %q", spec.ID, "1A")
+	}
+	if spec.Name != "Terminal Infrastructure" {
+		t.Errorf("Name = %q, want %q", spec.Name, "Terminal Infrastructure")
+	}
+
+	// All 5 H1 lines should be parsed as exit criteria gates.
+	if len(spec.ExitCriteria) != 5 {
+		t.Fatalf("len(ExitCriteria) = %d, want 5", len(spec.ExitCriteria))
+	}
+	for i, gate := range spec.ExitCriteria {
+		if gate.Type != phase.GateHumanApproval {
+			t.Errorf("ExitCriteria[%d].Type = %q, want %q", i, gate.Type, phase.GateHumanApproval)
+		}
+		if gate.Expected == "" {
+			t.Errorf("ExitCriteria[%d].Expected is empty", i)
+		}
+	}
+	if spec.ExitCriteria[0].Expected != "Module initialization and dependencies" {
+		t.Errorf("ExitCriteria[0].Expected = %q, want %q",
+			spec.ExitCriteria[0].Expected, "Module initialization and dependencies")
+	}
+}
+
+func TestParseSpec_ExitCriteriaH1BulletItems(t *testing.T) {
+	// LLM formats sub-items as "# - description".
+	content := `# Phase 2A: Gameplay
+
+## Status
+
+planned
+
+## Depends On
+
+Phase 1A
+
+## Exit Criteria
+
+# Manual verification:
+# - Player ship at bottom, moves left/right
+# - Press Space to shoot bullets
+`
+	path := filepath.Join(t.TempDir(), "PHASE.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := phase.ParseSpec(path)
+	if err != nil {
+		t.Fatalf("ParseSpec: %v", err)
+	}
+
+	if spec.ID != "2A" {
+		t.Errorf("ID = %q, want %q", spec.ID, "2A")
+	}
+	// "# Manual verification:" has content "Manual verification:" after stripping "# ".
+	// "# - Player ship..." becomes "Player ship..." after stripping "# " and "- ".
+	if len(spec.ExitCriteria) != 3 {
+		t.Fatalf("len(ExitCriteria) = %d, want 3", len(spec.ExitCriteria))
+	}
+	if spec.ExitCriteria[1].Expected != "Player ship at bottom, moves left/right" {
+		t.Errorf("ExitCriteria[1].Expected = %q, want %q",
+			spec.ExitCriteria[1].Expected, "Player ship at bottom, moves left/right")
 	}
 }

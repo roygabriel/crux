@@ -115,12 +115,16 @@ func parseSpec(text string) (*PhaseSpec, error) {
 	currentSubSection := specSubNone
 	var rationaleLines []string
 	var currentTaskGroup *TaskGroup
+	h1Parsed := false
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// H1: Phase header.
-		if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
+		// H1: Phase header — only the first H1 is treated as the title.
+		// Subsequent H1 lines (e.g. LLM-generated exit criteria formatted
+		// as "# Build succeeds") fall through to section-specific handlers.
+		if !h1Parsed && strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
+			h1Parsed = true
 			rest := strings.TrimPrefix(trimmed, "# ")
 			if idx := strings.Index(rest, ": "); idx >= 0 {
 				prefix := rest[:idx]
@@ -304,12 +308,23 @@ func parseFileLine(line string, sub string, spec *PhaseSpec) {
 }
 
 func parseExitCriteriaLine(line string, spec *PhaseSpec) {
-	// Match checkbox lines: "- [ ] ..." or "- [x] ..."
-	if !strings.HasPrefix(line, "- [ ] ") && !strings.HasPrefix(line, "- [x] ") {
+	var content string
+	switch {
+	case strings.HasPrefix(line, "- [ ] "):
+		content = strings.TrimPrefix(line, "- [ ] ")
+	case strings.HasPrefix(line, "- [x] "):
+		content = strings.TrimPrefix(line, "- [x] ")
+	case strings.HasPrefix(line, "# "):
+		// LLM sometimes formats exit criteria as H1 items.
+		content = strings.TrimPrefix(line, "# ")
+		content = strings.TrimPrefix(content, "- ")
+		content = strings.TrimSpace(content)
+	default:
 		return
 	}
-	content := strings.TrimPrefix(line, "- [ ] ")
-	content = strings.TrimPrefix(content, "- [x] ")
+	if content == "" {
+		return
+	}
 
 	gate := Gate{}
 	matches := backtickCmd.FindStringSubmatch(content)
